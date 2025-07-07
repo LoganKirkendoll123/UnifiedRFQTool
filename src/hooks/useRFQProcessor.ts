@@ -42,7 +42,8 @@ export const useRFQProcessor = ({ project44Client, freshxClient }: UseRFQProcess
   // Process single RFQ
   const processSingleRFQ = useCallback(async (
     rfq: RFQRow,
-    options: RFQProcessingOptions
+    options: RFQProcessingOptions,
+    batchName?: string
   ): Promise<SmartQuotingResult> => {
     setProcessingStatus({
       isProcessing: true,
@@ -51,8 +52,57 @@ export const useRFQProcessor = ({ project44Client, freshxClient }: UseRFQProcess
       currentItem: 'Processing RFQ...'
     });
 
+    let batchId: string | null = null;
+    
+    // Create batch if batch name is provided
+    if (batchName) {
+      try {
+        batchId = await createRFQBatch(
+          batchName,
+          options.pricingSettings,
+          options.selectedCarriers,
+          options.selectedCustomer
+        );
+        setCurrentBatchId(batchId);
+        console.log('📦 Created batch for single RFQ:', batchId);
+      } catch (error) {
+        console.error('❌ Failed to create batch for single RFQ:', error);
+      }
+    }
+
     try {
       const result = await processor.processSingleRFQ(rfq, options);
+      
+      // Save to database if we have a batch
+      if (batchId) {
+        try {
+          // Save the request
+          const requestId = await saveRFQRequest(
+            rfq,
+            result.quotingDecision,
+            result.quotingReason
+          );
+          
+          // Link to batch
+          await linkRequestToBatch(batchId, requestId, 0, 'processing');
+          
+          // Save all quotes
+          for (const quote of result.quotes) {
+            await saveRFQResponse(requestId, batchId, quote);
+          }
+          
+          // Update status
+          await updateBatchRequestStatus(batchId, requestId, result.status, result.error);
+          
+          // Update batch statistics
+          await updateBatchStatistics(batchId);
+          
+          console.log('✅ Saved single RFQ to database');
+        } catch (saveError) {
+          console.error('❌ Failed to save single RFQ to database:', saveError);
+        }
+      }
+      
       setResults([result]);
       return result;
     } catch (error) {
@@ -61,6 +111,9 @@ export const useRFQProcessor = ({ project44Client, freshxClient }: UseRFQProcess
       throw error;
     } finally {
       setProcessingStatus(prev => ({ ...prev, isProcessing: false }));
+      if (!batchName) {
+        setCurrentBatchId(null);
+      }
     }
   }, [processor]);
 
@@ -196,7 +249,8 @@ export const useRFQProcessor = ({ project44Client, freshxClient }: UseRFQProcess
   const processRFQsForAccountGroup = useCallback(async (
     rfqs: RFQRow[],
     accountGroupCode: string,
-    options: Omit<RFQProcessingOptions, 'selectedCarriers'>
+    options: Omit<RFQProcessingOptions, 'selectedCarriers'>,
+    batchName?: string
   ): Promise<SmartQuotingResult[]> => {
     setProcessingStatus({
       isProcessing: true,
@@ -204,6 +258,25 @@ export const useRFQProcessor = ({ project44Client, freshxClient }: UseRFQProcess
       totalSteps: rfqs.length
     });
     setResults([]);
+
+    let batchId: string | null = null;
+    
+    // Create batch if batch name is provided
+    if (batchName) {
+      try {
+        batchId = await createRFQBatch(
+          batchName,
+          options.pricingSettings,
+          {}, // No specific carriers for account group
+          options.selectedCustomer,
+          'account-group'
+        );
+        setCurrentBatchId(batchId);
+        console.log('📦 Created batch for account group processing:', batchId);
+      } catch (error) {
+        console.error('❌ Failed to create batch for account group:', error);
+      }
+    }
 
     const processingOptions = {
       ...options,
@@ -218,7 +291,78 @@ export const useRFQProcessor = ({ project44Client, freshxClient }: UseRFQProcess
     };
 
     try {
-      const allResults = await processor.processRFQsForAccountGroup(rfqs, accountGroupCode, processingOptions);
+      const allResults: SmartQuotingResult[] = [];
+      
+      // Process each RFQ individually for real-time saving
+      for (let i = 0; i < rfqs.length; i++) {
+        const rfq = rfqs[i];
+        
+        if (processingOptions.onProgress) {
+          processingOptions.onProgress(i + 1, rfqs.length, `Processing RFQ ${i + 1}...`);
+        }
+        
+        try {
+          const result = await processor.processSingleRFQ(rfq, processingOptions, i);
+          allResults.push(result);
+          
+          // Save to database in real-time if we have a batch
+          if (batchId) {
+            try {
+              // Save the request
+              const requestId = await saveRFQRequest(
+                rfq,
+                result.quotingDecision,
+                result.quotingReason
+              );
+              
+              // Link to batch
+              await linkRequestToBatch(batchId, requestId, i, 'processing');
+              
+              // Save all quotes
+              for (const quote of result.quotes) {
+                await saveRFQResponse(requestId, batchId, quote);
+              }
+              
+              // Update status
+              await updateBatchRequestStatus(batchId, requestId, result.status, result.error);
+              
+              console.log(`✅ Saved account group RFQ ${i + 1} to database in real-time`);
+            } catch (saveError) {
+              console.error(`❌ Failed to save account group RFQ ${i + 1} to database:`, saveError);
+            }
+          }
+          
+          // Update UI with current results
+          setResults([...allResults]);
+          
+        } catch (error) {
+          const errorResult: SmartQuotingResult = {
+            rowIndex: i,
+            originalData: rfq,
+            quotes: [],
+            status: 'error',
+            error: error instanceof Error ? error.message : 'Processing failed',
+            quotingDecision: 'project44-standard',
+            quotingReason: 'Error occurred during processing'
+          };
+          allResults.push(errorResult);
+          setResults([...allResults]);
+        }
+        
+        // Small delay between requests
+        await new Promise(resolve => setTimeout(resolve, 100));
+      }
+      
+      // Update final batch statistics
+      if (batchId) {
+        try {
+          await updateBatchStatistics(batchId);
+          console.log('📊 Updated final account group batch statistics');
+        } catch (error) {
+          console.error('❌ Failed to update account group batch statistics:', error);
+        }
+      }
+      
       setResults(allResults);
       return allResults;
     } catch (error) {
@@ -227,6 +371,9 @@ export const useRFQProcessor = ({ project44Client, freshxClient }: UseRFQProcess
       throw error;
     } finally {
       setProcessingStatus(prev => ({ ...prev, isProcessing: false }));
+      if (!batchName) {
+        setCurrentBatchId(null);
+      }
     }
   }, [processor]);
 

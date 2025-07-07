@@ -258,6 +258,17 @@ export const PastBatchManager: React.FC<PastBatchManagerProps> = ({
 
   return (
     <div className="bg-white rounded-lg shadow-lg overflow-hidden">
+      {/* Show Analysis View if selected */}
+      {showAnalysisView && selectedBatch && batchRequests.length > 0 ? (
+        <BatchAnalysisView
+          batch={selectedBatch}
+          requests={batchRequests}
+          responses={originalResponses}
+          newResponses={newResponses.length > 0 ? newResponses : undefined}
+          onBack={() => setShowAnalysisView(false)}
+        />
+      ) : (
+        <>
         {/* Header */}
         <div className="bg-gradient-to-r from-purple-600 to-indigo-600 px-6 py-6 text-white">
           <div className="flex items-center justify-between">
@@ -635,6 +646,8 @@ export const PastBatchManager: React.FC<PastBatchManagerProps> = ({
             onClose={() => setShowAnalytics(false)}
           />
         )}
+        </>
+      )}
       
     </div>
   );

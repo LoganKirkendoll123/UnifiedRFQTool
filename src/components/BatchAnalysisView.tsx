@@ -25,7 +25,7 @@ import {
 import { BatchData, BatchRequest, BatchResponse } from '../utils/apiClient';
 import { formatCurrency } from '../utils/pricingCalculator';
 import { CarrierCards } from './CarrierCards';
-import { Project44APIClient } from '../utils/apiClient';
+import { QuoteWithPricing } from '../types';
 
 interface BatchAnalysisViewProps {
   batch: BatchData;
@@ -73,6 +73,70 @@ export const BatchAnalysisView: React.FC<BatchAnalysisViewProps> = ({
   const [expandedShipments, setExpandedShipments] = useState<Set<string>>(new Set());
   const [analysisMode, setAnalysisMode] = useState<'overview' | 'detailed' | 'recommendations'>('overview');
   const [shipmentAnalyses, setShipmentAnalyses] = useState<ShipmentAnalysis[]>([]);
+
+  // Convert BatchResponse to QuoteWithPricing format for CarrierCards
+  const convertBatchResponseToQuote = (response: BatchResponse): QuoteWithPricing => {
+    return {
+      quoteId: parseInt(response.quote_id) || 0,
+      baseRate: 0, // Not stored separately in BatchResponse
+      fuelSurcharge: 0, // Not stored separately in BatchResponse
+      accessorial: [], // Would need to parse from raw_response
+      premiumsAndDiscounts: response.carrier_total_rate, // Use carrier total as premiums
+      readyByDate: new Date(response.created_at || '').toLocaleDateString(),
+      estimatedDeliveryDate: '',
+      weight: 0, // Not available in response
+      pallets: 0, // Not available in response
+      stackable: false,
+      pickup: {
+        city: '',
+        state: '',
+        zip: ''
+      },
+      dropoff: {
+        city: '',
+        state: '',
+        zip: ''
+      },
+      submittedBy: 'Database',
+      submissionDatetime: response.created_at || '',
+      carrier: {
+        name: response.carrier_name,
+        mcNumber: '',
+        logo: '',
+        scac: response.carrier_scac || response.carrier_code || '',
+        dotNumber: ''
+      },
+      carrierTotalRate: response.carrier_total_rate,
+      customerPrice: response.customer_price,
+      profit: response.profit,
+      markupApplied: response.markup_applied,
+      isCustomPrice: response.is_custom_price || false,
+      appliedMarginType: response.applied_margin_type as any,
+      appliedMarginPercentage: response.applied_margin_percentage || 0,
+      chargeBreakdown: {
+        baseCharges: [],
+        fuelCharges: [],
+        accessorialCharges: [],
+        discountCharges: [],
+        premiumCharges: [],
+        otherCharges: []
+      },
+      // Project44 specific fields
+      capacityProviderIdentifier: undefined,
+      rateQuoteDetail: {
+        charges: [],
+        subtotal: response.carrier_total_rate,
+        total: response.carrier_total_rate
+      },
+      serviceLevel: response.service_level_code ? {
+        code: response.service_level_code,
+        description: response.service_level_description || ''
+      } : undefined,
+      transitDays: response.transit_days,
+      carrierCode: response.carrier_code,
+      id: response.id
+    };
+  };
 
   useEffect(() => {
     calculateAnalyses();
@@ -582,7 +646,7 @@ export const BatchAnalysisView: React.FC<BatchAnalysisViewProps> = ({
                           Original Quotes ({analysis.originalQuotes.length})
                         </h4>
                         <CarrierCards
-                          quotes={analysis.originalQuotes as any}
+                          quotes={analysis.originalQuotes.map(convertBatchResponseToQuote)}
                           onPriceUpdate={() => {}} // Read-only for analysis
                           shipmentInfo={{
                             fromZip: analysis.request.from_zip,
@@ -601,7 +665,7 @@ export const BatchAnalysisView: React.FC<BatchAnalysisViewProps> = ({
                           New Quotes ({analysis.newQuotes.length})
                         </h4>
                         <CarrierCards
-                          quotes={analysis.newQuotes as any}
+                          quotes={analysis.newQuotes.map(convertBatchResponseToQuote)}
                           onPriceUpdate={() => {}} // Read-only for analysis
                           shipmentInfo={{
                             fromZip: analysis.request.from_zip,

@@ -36,10 +36,12 @@ export const CustomerSelection: React.FC<CustomerSelectionProps> = ({
   const loadCustomers = async () => {
     setLoading(true);
     setError('');
-    try {
-      // Get unique customers from CustomerCarriers table
-      console.log('🔍 Loading all customers from CustomerCarriers...');
-      
+      // Get unique customers from the Shipments table
+      const { data, error } = await supabase
+        .from('Shipments')
+        .select('Customer')
+        .not('Customer', 'is', null)
+        .order('Customer');
       // Load all customers without any limits
       let allCustomers: any[] = [];
       let from = 0;
@@ -83,7 +85,11 @@ export const CustomerSelection: React.FC<CustomerSelectionProps> = ({
           errorMsg = 'Database access denied. Please check your row-level security policies.';
         } else {
           errorMsg = err.message;
-        }
+      // Extract unique customer names
+      const uniqueCustomers = [...new Set(data?.map(item => item.Customer).filter(Boolean))]
+        .map(name => ({ name, id: name }));
+      
+      setCustomers(uniqueCustomers || []);
       }
       setError(errorMsg);
       console.error('❌ Failed to load customers:', err);

@@ -104,14 +104,14 @@ export class RFQProcessor {
 
       if (classification.quoting === 'freshx' && this.freshxClient) {
         console.log(`🌡️ Getting FreshX quotes for RFQ ${rowIndex + 1}`);
-        quotes = await this.freshxClient.getQuotes(rfq);
+        quotes = await this.freshxClient.getQuotes(rfq, options.batchId);
       } else if (classification.quoting === 'project44-dual' && this.project44Client) {
         console.log(`📦 Getting dual quotes (Volume LTL + Standard LTL) for RFQ ${rowIndex + 1}`);
         
         // Get both Volume LTL and Standard LTL quotes
         const [volumeQuotes, standardQuotes] = await Promise.all([
-          this.project44Client.getQuotes(rfq, selectedCarrierIds, true, false, false),  // Volume LTL
-          this.project44Client.getQuotes(rfq, selectedCarrierIds, false, false, false)  // Standard LTL
+          this.project44Client.getQuotes(rfq, selectedCarrierIds, true, false, false, options.batchId),  // Volume LTL
+          this.project44Client.getQuotes(rfq, selectedCarrierIds, false, false, false, options.batchId)  // Standard LTL
         ]);
         
         // Tag quotes with their mode for identification
@@ -131,7 +131,7 @@ export class RFQProcessor {
         console.log(`✅ Dual quoting completed: ${volumeQuotes.length} Volume LTL + ${standardQuotes.length} Standard LTL quotes`);
       } else if (this.project44Client) {
         console.log(`🚛 Getting Standard LTL quotes for RFQ ${rowIndex + 1}`);
-        quotes = await this.project44Client.getQuotes(rfq, selectedCarrierIds, false, false, false);
+        quotes = await this.project44Client.getQuotes(rfq, selectedCarrierIds, false, false, false, options.batchId);
       }
       
       if (quotes.length > 0) {
@@ -145,17 +145,7 @@ export class RFQProcessor {
         result.quotes = quotesWithPricing;
         result.status = 'success';
         
-        // Save responses to database if autoSave is enabled
-        if (autoSave && options.batchId && requestId) {
-          try {
-            for (const quote of quotesWithPricing) {
-              await saveRFQResponse(requestId, options.batchId, quote);
-            }
-            console.log(`💾 Saved ${quotesWithPricing.length} responses for RFQ ${rowIndex + 1}`);
-          } catch (error) {
-            console.error(`❌ Failed to save responses for RFQ ${rowIndex + 1}:`, error);
-          }
-        }
+        // Note: Responses are now saved directly in the API client methods
         
         console.log(`✅ ${classification.quoting.toUpperCase()} RFQ ${rowIndex + 1} completed: ${quotes.length} quotes received`);
       } else {
@@ -279,12 +269,12 @@ export class RFQProcessor {
         let quotes: any[] = [];
 
         if (classification.quoting === 'freshx' && this.freshxClient) {
-          quotes = await this.freshxClient.getQuotes(rfq);
+          quotes = await this.freshxClient.getQuotes(rfq, options.batchId);
         } else if (classification.quoting === 'project44-dual') {
           // Get both Volume LTL and Standard LTL quotes for account group
           const [volumeQuotes, standardQuotes] = await Promise.all([
-            this.project44Client.getQuotesForAccountGroup(rfq, accountGroupCode, true, false, false),
-            this.project44Client.getQuotesForAccountGroup(rfq, accountGroupCode, false, false, false)
+            this.project44Client.getQuotesForAccountGroup(rfq, accountGroupCode, true, false, false, options.batchId),
+            this.project44Client.getQuotesForAccountGroup(rfq, accountGroupCode, false, false, false, options.batchId)
           ]);
           
           const taggedVolumeQuotes = volumeQuotes.map(quote => ({
@@ -301,7 +291,7 @@ export class RFQProcessor {
           
           quotes = [...taggedVolumeQuotes, ...taggedStandardQuotes];
         } else {
-          quotes = await this.project44Client.getQuotesForAccountGroup(rfq, accountGroupCode, false, false, false);
+          quotes = await this.project44Client.getQuotesForAccountGroup(rfq, accountGroupCode, false, false, false, options.batchId);
         }
         
         if (quotes.length > 0) {
@@ -314,17 +304,7 @@ export class RFQProcessor {
           result.quotes = quotesWithPricing;
           result.status = 'success';
           
-          // Save responses to database if autoSave is enabled
-          if (autoSave && options.batchId && requestId) {
-            try {
-              for (const quote of quotesWithPricing) {
-                await saveRFQResponse(requestId, options.batchId, quote);
-              }
-              console.log(`💾 Saved ${quotesWithPricing.length} account group responses for RFQ ${i + 1}`);
-            } catch (error) {
-              console.error(`❌ Failed to save account group responses for RFQ ${i + 1}:`, error);
-            }
-          }
+          // Note: Responses are now saved directly in the API client methods
         } else {
           result.status = 'success';
         }

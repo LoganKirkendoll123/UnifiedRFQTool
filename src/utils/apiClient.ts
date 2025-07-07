@@ -18,7 +18,7 @@ import {
   Contact,
   HazmatDetail
 } from '../types';
-import { saveRFQRequest } from './rfqStorage';
+import { saveRFQRequest, saveRFQResponse } from './rfqStorage';
 
 // Carrier group interface for organizing carriers
 export interface CarrierGroup {
@@ -643,6 +643,33 @@ export class Project44APIClient {
     });
 
     console.log(`✅ Transformed ${quotes.length} filtered ${modeDescription} quotes from selected carriers`);
+    
+    // Log responses to database
+    for (const quote of quotes) {
+      try {
+        // Create a QuoteWithPricing object for logging
+        const quoteWithPricing = {
+          ...quote,
+          carrierTotalRate: quote.rateQuoteDetail?.total || quote.premiumsAndDiscounts,
+          customerPrice: quote.rateQuoteDetail?.total || quote.premiumsAndDiscounts,
+          profit: 0,
+          markupApplied: 0,
+          isCustomPrice: false,
+          chargeBreakdown: {
+            baseCharges: [],
+            fuelCharges: [],
+            accessorialCharges: [],
+            discountCharges: [],
+            premiumCharges: [],
+            otherCharges: quote.rateQuoteDetail?.charges || []
+          }
+        };
+        await saveRFQResponse('temp-request-id', 'temp-batch-id', quoteWithPricing as any);
+      } catch (error) {
+        console.error('Failed to log Project44 response:', error);
+      }
+    }
+    
     return quotes;
   }
 
@@ -823,6 +850,33 @@ export class Project44APIClient {
     });
 
     console.log(`✅ Transformed ${quotes.length} quotes from account group ${accountGroupCode}`);
+    
+    // Log responses to database
+    for (const quote of quotes) {
+      try {
+        // Create a QuoteWithPricing object for logging
+        const quoteWithPricing = {
+          ...quote,
+          carrierTotalRate: quote.rateQuoteDetail?.total || quote.premiumsAndDiscounts,
+          customerPrice: quote.rateQuoteDetail?.total || quote.premiumsAndDiscounts,
+          profit: 0,
+          markupApplied: 0,
+          isCustomPrice: false,
+          chargeBreakdown: {
+            baseCharges: [],
+            fuelCharges: [],
+            accessorialCharges: [],
+            discountCharges: [],
+            premiumCharges: [],
+            otherCharges: quote.rateQuoteDetail?.charges || []
+          }
+        };
+        await saveRFQResponse('temp-request-id', 'temp-batch-id', quoteWithPricing as any);
+      } catch (error) {
+        console.error('Failed to log Project44 account group response:', error);
+      }
+    }
+    
     return quotes;
   }
 
@@ -1144,6 +1198,33 @@ export class FreshXAPIClient {
       }));
 
       console.log(`✅ Transformed ${transformedQuotes.length} FreshX quotes`);
+      
+      // Log responses to database
+      for (const quote of transformedQuotes) {
+        try {
+          // Create a QuoteWithPricing object for logging
+          const quoteWithPricing = {
+            ...quote,
+            carrierTotalRate: quote.baseRate + quote.fuelSurcharge + quote.premiumsAndDiscounts,
+            customerPrice: quote.baseRate + quote.fuelSurcharge + quote.premiumsAndDiscounts,
+            profit: 0,
+            markupApplied: 0,
+            isCustomPrice: false,
+            chargeBreakdown: {
+              baseCharges: quote.baseRate > 0 ? [{ amount: quote.baseRate, code: 'BASE', description: 'Base Rate' }] : [],
+              fuelCharges: quote.fuelSurcharge > 0 ? [{ amount: quote.fuelSurcharge, code: 'FUEL', description: 'Fuel Surcharge' }] : [],
+              accessorialCharges: [],
+              discountCharges: [],
+              premiumCharges: quote.premiumsAndDiscounts > 0 ? [{ amount: quote.premiumsAndDiscounts, code: 'PREMIUM', description: 'Premiums' }] : [],
+              otherCharges: []
+            }
+          };
+          await saveRFQResponse('temp-request-id', 'temp-batch-id', quoteWithPricing as any);
+        } catch (error) {
+          console.error('Failed to log FreshX response:', error);
+        }
+      }
+      
       return transformedQuotes;
 
     } catch (error) {

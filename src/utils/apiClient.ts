@@ -415,15 +415,17 @@ export class Project44APIClient {
     selectedCarrierIds: string[] = [],
     isVolumeMode: boolean = false,
     isFTLMode: boolean = false,
-    isReeferMode: boolean = false
+    isReeferMode: boolean = false,
+    batchId?: string
   ): Promise<Quote[]> {
     // Log request to database
+    let requestId: string | null = null;
     try {
       const quotingDecision = isReeferMode ? 'freshx' : 
                              isVolumeMode ? 'project44-volume' : 
                              isFTLMode ? 'project44-ftl' : 'project44-standard';
       const quotingReason = `${quotingDecision.toUpperCase()} request for ${rfq.fromZip} → ${rfq.toZip}`;
-      await saveRFQRequest(rfq, quotingDecision, quotingReason);
+      requestId = await saveRFQRequest(rfq, quotingDecision, quotingReason);
     } catch (error) {
       console.error('Failed to log Project44 request:', error);
     }
@@ -647,6 +649,10 @@ export class Project44APIClient {
     // Log responses to database
     for (const quote of quotes) {
       try {
+        if (!requestId || !batchId) {
+          console.warn('Missing requestId or batchId for response logging');
+          continue;
+        }
         // Create a QuoteWithPricing object for logging
         const quoteWithPricing = {
           ...quote,
@@ -664,7 +670,7 @@ export class Project44APIClient {
             otherCharges: quote.rateQuoteDetail?.charges || []
           }
         };
-        await saveRFQResponse('temp-request-id', 'temp-batch-id', quoteWithPricing as any);
+        await saveRFQResponse(requestId, batchId, quoteWithPricing as any);
       } catch (error) {
         console.error('Failed to log Project44 response:', error);
       }
@@ -679,15 +685,17 @@ export class Project44APIClient {
     accountGroupCode: string,
     isVolumeMode: boolean = false,
     isFTLMode: boolean = false,
-    isReeferMode: boolean = false
+    isReeferMode: boolean = false,
+    batchId?: string
   ): Promise<Quote[]> {
     // Log request to database
+    let requestId: string | null = null;
     try {
       const quotingDecision = isReeferMode ? 'freshx' : 
                              isVolumeMode ? 'project44-volume' : 
                              isFTLMode ? 'project44-ftl' : 'project44-standard';
       const quotingReason = `${quotingDecision.toUpperCase()} account group request for ${rfq.fromZip} → ${rfq.toZip}`;
-      await saveRFQRequest(rfq, quotingDecision, quotingReason);
+      requestId = await saveRFQRequest(rfq, quotingDecision, quotingReason);
     } catch (error) {
       console.error('Failed to log Project44 account group request:', error);
     }
@@ -854,6 +862,10 @@ export class Project44APIClient {
     // Log responses to database
     for (const quote of quotes) {
       try {
+        if (!requestId || !batchId) {
+          console.warn('Missing requestId or batchId for account group response logging');
+          continue;
+        }
         // Create a QuoteWithPricing object for logging
         const quoteWithPricing = {
           ...quote,
@@ -871,7 +883,7 @@ export class Project44APIClient {
             otherCharges: quote.rateQuoteDetail?.charges || []
           }
         };
-        await saveRFQResponse('temp-request-id', 'temp-batch-id', quoteWithPricing as any);
+        await saveRFQResponse(requestId, batchId, quoteWithPricing as any);
       } catch (error) {
         console.error('Failed to log Project44 account group response:', error);
       }
@@ -1096,10 +1108,11 @@ export class FreshXAPIClient {
     this.apiKey = apiKey;
   }
 
-  async getQuotes(rfq: RFQRow): Promise<Quote[]> {
+  async getQuotes(rfq: RFQRow, batchId?: string): Promise<Quote[]> {
     // Log request to database
+    let requestId: string | null = null;
     try {
-      await saveRFQRequest(rfq, 'freshx', `FreshX reefer request for ${rfq.fromZip} → ${rfq.toZip}`);
+      requestId = await saveRFQRequest(rfq, 'freshx', `FreshX reefer request for ${rfq.fromZip} → ${rfq.toZip}`);
     } catch (error) {
       console.error('Failed to log FreshX request:', error);
     }
@@ -1202,6 +1215,10 @@ export class FreshXAPIClient {
       // Log responses to database
       for (const quote of transformedQuotes) {
         try {
+          if (!requestId || !batchId) {
+            console.warn('Missing requestId or batchId for FreshX response logging');
+            continue;
+          }
           // Create a QuoteWithPricing object for logging
           const quoteWithPricing = {
             ...quote,
@@ -1219,7 +1236,7 @@ export class FreshXAPIClient {
               otherCharges: []
             }
           };
-          await saveRFQResponse('temp-request-id', 'temp-batch-id', quoteWithPricing as any);
+          await saveRFQResponse(requestId, batchId, quoteWithPricing as any);
         } catch (error) {
           console.error('Failed to log FreshX response:', error);
         }

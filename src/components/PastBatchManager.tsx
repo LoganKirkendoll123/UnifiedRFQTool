@@ -30,7 +30,6 @@ interface PastBatchManagerProps {
   pricingSettings: PricingSettings;
   selectedCustomer: string;
   onBatchSettingsLoad?: (customer: string, carriers: { [carrierId: string]: boolean }, pricingSettings: PricingSettings) => void;
-  onBatchSettingsLoad?: (customer: string, carriers: { [carrierId: string]: boolean }, pricingSettings: PricingSettings) => void;
 }
 
 export const PastBatchManager: React.FC<PastBatchManagerProps> = ({
@@ -38,8 +37,7 @@ export const PastBatchManager: React.FC<PastBatchManagerProps> = ({
   freshxClient,
   onClose,
   pricingSettings,
-  selectedCustomer
-  onBatchSettingsLoad
+  selectedCustomer,
   onBatchSettingsLoad
 }) => {
   const [batches, setBatches] = useState<BatchData[]>([]);

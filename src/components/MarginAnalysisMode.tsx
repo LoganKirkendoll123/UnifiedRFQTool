@@ -14,11 +14,11 @@ import {
   Info,
   Loader,
   RefreshCw,
-  Save
+  Save,
+  Award
 } from 'lucide-react';
 import { BatchData, BatchRequest, BatchResponse, Project44APIClient, FreshXAPIClient } from '../utils/apiClient';
 import { formatCurrency } from '../utils/pricingCalculator';
-import { RFQProcessor } from '../utils/rfqProcessor';
 import { PricingSettings } from '../types';
 
 interface MarginAnalysisModeProps {
@@ -32,14 +32,16 @@ interface MarginAnalysisModeProps {
 interface CarrierMarginAnalysis {
   carrierName: string;
   carrierScac?: string;
-  originalAvgPrice: number;
-  newAvgPrice: number;
-  priceChange: number;
-  priceChangePercent: number;
-  quoteCount: number;
+  quotesAnalyzed: number;
+  avgCarrierRate: number;
+  avgCustomerPrice: number;
+  currentMarginPercent: number;
+  avgProfitPerShipment: number;
   recommendedMargin: number;
+  potentialProfitIncrease: number;
   confidence: 'high' | 'medium' | 'low';
   reasoning: string;
+  marginConsistency: number; // How consistent margins are across quotes
 }
 
 export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
@@ -53,17 +55,15 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
   const [selectedBatch, setSelectedBatch] = useState<BatchData | null>(null);
   const [batchRequests, setBatchRequests] = useState<BatchRequest[]>([]);
   const [originalResponses, setOriginalResponses] = useState<BatchResponse[]>([]);
-  const [newResponses, setNewResponses] = useState<BatchResponse[]>([]);
   const [loading, setLoading] = useState(true);
-  const [processing, setProcessing] = useState(false);
+  const [analyzing, setAnalyzing] = useState(false);
   const [analysis, setAnalysis] = useState<CarrierMarginAnalysis[]>([]);
-  const [progress, setProgress] = useState({ current: 0, total: 0, item: '' });
-  const [error, setError] = useState<string>('');
-  const [debugInfo, setDebugInfo] = useState<{
-    originalCarriers: string[];
-    newCarriers: string[];
-    matchedCarriers: string[];
-  } | null>(null);
+  const [overallStats, setOverallStats] = useState({
+    totalQuotes: 0,
+    avgMargin: 0,
+    totalProfitOpportunity: 0,
+    carriersAnalyzed: 0
+  });
 
   useEffect(() => {
     loadBatches();
@@ -75,10 +75,14 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
     try {
       console.log('📋 Loading batches for margin analysis...');
       const allBatches = await project44Client.getAllBatches();
-      // Filter to only batches with data
-      const batchesWithData = allBatches.filter(batch => batch.total_rfqs > 0 && batch.total_quotes > 0);
+      // Filter to only batches with substantial quote data
+      const batchesWithData = allBatches.filter(batch => 
+        batch.total_rfqs > 0 && 
+        batch.total_quotes >= 5 && // At least 5 quotes for meaningful analysis
+        batch.customer_name // Only batches with customer context
+      );
       setBatches(batchesWithData);
-      console.log(`✅ Loaded ${batchesWithData.length} batches with data`);
+      console.log(`✅ Loaded ${batchesWithData.length} batches suitable for margin analysis`);
     } catch (error) {
       console.error('❌ Failed to load batches:', error);
     } finally {
@@ -100,7 +104,6 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
       
       setBatchRequests(requests);
       setOriginalResponses(responses);
-      setNewResponses([]);
       setAnalysis([]);
       
       console.log(`✅ Loaded ${requests.length} requests and ${responses.length} responses`);
@@ -109,200 +112,185 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
     }
   };
 
-  const reprocessForMarginAnalysis = async () => {
-    if (!selectedBatch || !project44Client || !freshxClient || batchRequests.length === 0) {
-      console.error('❌ Missing required data for margin analysis');
-      setError('Missing required data for margin analysis');
+  const analyzeExistingMargins = async () => {
+    if (!selectedBatch || originalResponses.length === 0) {
+      console.error('❌ No batch or responses to analyze');
       return;
     }
 
-    setProcessing(true);
-    setNewResponses([]);
-    setAnalysis([]);
-    setError('');
-    setDebugInfo(null);
+    setAnalyzing(true);
 
     try {
-      console.log(`🔄 Reprocessing batch for margin analysis: ${selectedBatch.batch_name}`);
+      console.log(`🧮 Analyzing margins for ${originalResponses.length} quotes in batch: ${selectedBatch.batch_name}`);
       
-      // Create RFQ processor
-      const processor = new RFQProcessor(project44Client, freshxClient);
+      // Group responses by carrier
+      const carrierGroups = groupResponsesByCarrier(originalResponses);
+      const carrierAnalyses: CarrierMarginAnalysis[] = [];
       
-      // Create a new batch for comparison
-      const newBatchName = `${selectedBatch.batch_name} - Margin Analysis ${new Date().toISOString().split('T')[0]}`;
-      const newBatchId = await processor.createBatch(newBatchName, {
-        selectedCarriers: selectedBatch.selected_carriers || {},
-        pricingSettings,
-        selectedCustomer,
-        createdBy: 'margin-analysis'
-      });
-      
-      console.log(`✅ Created analysis batch: ${newBatchId}`);
-      
-      // Convert batch requests back to RFQ format
-      const rfqs = batchRequests.map(request => request.request_payload);
-      
-      // Process with current settings
-      await processor.processMultipleRFQs(rfqs, {
-        selectedCarriers: selectedBatch.selected_carriers || {},
-        pricingSettings,
-        selectedCustomer,
-        batchName: newBatchName,
-        createdBy: 'margin-analysis',
-        onProgress: (current, total, item) => {
-          setProgress({ current, total, item: item || '' });
+      // Analyze each carrier
+      Object.entries(carrierGroups).forEach(([carrierName, quotes]) => {
+        if (quotes.length < 2) {
+          console.log(`⚠️ Skipping ${carrierName}: Only ${quotes.length} quote(s) - insufficient data`);
+          return;
+        }
+
+        console.log(`📊 Analyzing ${carrierName}: ${quotes.length} quotes`);
+        
+        const analysis = analyzeCarrierMargins(carrierName, quotes);
+        if (analysis) {
+          carrierAnalyses.push(analysis);
         }
       });
+
+      // Sort by potential profit increase (highest opportunity first)
+      carrierAnalyses.sort((a, b) => b.potentialProfitIncrease - a.potentialProfitIncrease);
       
-      // Load the new responses
-      const newBatchResponses = await project44Client.getBatchResponses(newBatchId);
-      setNewResponses(newBatchResponses);
+      setAnalysis(carrierAnalyses);
       
-      console.log(`✅ Margin analysis completed: ${newBatchResponses.length} new responses`);
+      // Calculate overall statistics
+      const totalQuotes = originalResponses.length;
+      const avgMargin = originalResponses.reduce((sum, r) => sum + (r.applied_margin_percentage || 0), 0) / totalQuotes;
+      const totalProfitOpportunity = carrierAnalyses.reduce((sum, a) => sum + a.potentialProfitIncrease, 0);
       
-      // Calculate margin analysis
-      if (newBatchResponses.length === 0) {
-        setError('No quotes received during reprocessing. Check your API credentials and carrier selection.');
-        return;
-      }
+      setOverallStats({
+        totalQuotes,
+        avgMargin,
+        totalProfitOpportunity,
+        carriersAnalyzed: carrierAnalyses.length
+      });
       
-      calculateMarginAnalysis(originalResponses, newBatchResponses);
+      console.log(`✅ Margin analysis complete: ${carrierAnalyses.length} carriers analyzed`);
       
     } catch (error) {
-      console.error('❌ Failed to reprocess for margin analysis:', error);
-      setError(`Failed to reprocess batch: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      console.error('❌ Failed to analyze margins:', error);
     } finally {
-      setProcessing(false);
-      setProgress({ current: 0, total: 0, item: '' });
+      setAnalyzing(false);
     }
   };
 
-  const calculateMarginAnalysis = (originalResponses: BatchResponse[], newResponses: BatchResponse[]) => {
-    console.log('🧮 Calculating carrier margin analysis...');
-    console.log(`📊 Original responses: ${originalResponses.length}, New responses: ${newResponses.length}`);
+  const analyzeCarrierMargins = (carrierName: string, quotes: BatchResponse[]): CarrierMarginAnalysis | null => {
+    // Extract carrier rates and customer prices
+    const validQuotes = quotes.filter(q => q.carrier_total_rate > 0 && q.customer_price > 0);
     
-    // Group responses by carrier
-    const originalByCarrier = groupResponsesByCarrier(originalResponses);
-    const newByCarrier = groupResponsesByCarrier(newResponses);
-    
-    // Debug information
-    const originalCarriers = Object.keys(originalByCarrier);
-    const newCarriers = Object.keys(newByCarrier);
-    const matchedCarriers = originalCarriers.filter(carrier => newByCarrier[carrier]);
-    
-    console.log(`📊 Original carriers: ${originalCarriers.length}`, originalCarriers);
-    console.log(`📊 New carriers: ${newCarriers.length}`, newCarriers);
-    console.log(`📊 Matched carriers: ${matchedCarriers.length}`, matchedCarriers);
-    
-    setDebugInfo({
-      originalCarriers,
-      newCarriers,
-      matchedCarriers
-    });
-    
-    if (matchedCarriers.length === 0) {
-      setError('No matching carriers found between original and new quotes. This could be due to different carrier selection or API issues.');
-      return;
+    if (validQuotes.length === 0) {
+      console.log(`⚠️ No valid quotes for ${carrierName}`);
+      return null;
     }
+
+    const avgCarrierRate = validQuotes.reduce((sum, q) => sum + q.carrier_total_rate, 0) / validQuotes.length;
+    const avgCustomerPrice = validQuotes.reduce((sum, q) => sum + q.customer_price, 0) / validQuotes.length;
+    const avgProfitPerShipment = validQuotes.reduce((sum, q) => sum + q.profit, 0) / validQuotes.length;
     
-    const carrierAnalyses: CarrierMarginAnalysis[] = [];
+    // Current margin percentage (profit / customer price)
+    const currentMarginPercent = avgCustomerPrice > 0 ? (avgProfitPerShipment / avgCustomerPrice) * 100 : 0;
     
-    // Only analyze carriers that appear in both datasets
-    matchedCarriers.forEach(carrierName => {
-      const originalQuotes = originalByCarrier[carrierName] || [];
-      const newQuotes = newByCarrier[carrierName] || [];
-      
-      // Skip if we don't have sufficient quotes
-      if (originalQuotes.length === 0 || newQuotes.length === 0) {
-        console.log(`⚠️ Skipping ${carrierName}: original=${originalQuotes.length}, new=${newQuotes.length}`);
-        return;
-      }
-      
-      console.log(`✅ Analyzing ${carrierName}: original=${originalQuotes.length}, new=${newQuotes.length} quotes`);
-      
-      const originalAvgPrice = originalQuotes.reduce((sum, q) => sum + q.customer_price, 0) / originalQuotes.length;
-      const newAvgPrice = newQuotes.reduce((sum, q) => sum + q.customer_price, 0) / newQuotes.length;
-      
-      const priceChange = newAvgPrice - originalAvgPrice;
-      const priceChangePercent = originalAvgPrice > 0 ? (priceChange / originalAvgPrice) * 100 : 0;
-      
-      // Calculate recommended margin based on price differences
-      const { recommendedMargin, confidence, reasoning } = calculateRecommendedMargin(
-        originalQuotes,
-        newQuotes,
-        priceChangePercent
-      );
-      
-      carrierAnalyses.push({
-        carrierName,
-        carrierScac: originalQuotes[0]?.carrier_scac || newQuotes[0]?.carrier_scac,
-        originalAvgPrice,
-        newAvgPrice,
-        priceChange,
-        priceChangePercent,
-        quoteCount: Math.min(originalQuotes.length, newQuotes.length),
-        recommendedMargin,
-        confidence,
-        reasoning
-      });
-    });
+    // Calculate margin consistency (how much margins vary)
+    const margins = validQuotes.map(q => q.customer_price > 0 ? (q.profit / q.customer_price) * 100 : 0);
+    const marginVariance = calculateVariance(margins);
+    const marginConsistency = Math.max(0, 100 - marginVariance); // Higher = more consistent
     
-    console.log(`✅ Generated analysis for ${carrierAnalyses.length} carriers`);
+    // Determine recommended margin based on various factors
+    const { recommendedMargin, confidence, reasoning } = calculateOptimalMargin(
+      avgCarrierRate,
+      avgCustomerPrice,
+      currentMarginPercent,
+      marginConsistency,
+      validQuotes.length,
+      selectedBatch.customer_name || ''
+    );
     
-    if (carrierAnalyses.length === 0) {
-      setError('No carrier analysis could be generated. All carriers may have been filtered out due to insufficient quote data.');
-      return;
-    }
-    
-    // Sort by price change impact (most significant first)
-    carrierAnalyses.sort((a, b) => Math.abs(b.priceChangePercent) - Math.abs(a.priceChangePercent));
-    
-    setAnalysis(carrierAnalyses);
-    console.log(`✅ Calculated margin analysis for ${carrierAnalyses.length} carriers`);
+    // Calculate potential profit increase per shipment
+    const recommendedCustomerPrice = avgCarrierRate / (1 - recommendedMargin / 100);
+    const recommendedProfit = recommendedCustomerPrice - avgCarrierRate;
+    const potentialProfitIncrease = Math.max(0, recommendedProfit - avgProfitPerShipment);
+
+    return {
+      carrierName,
+      carrierScac: validQuotes[0]?.carrier_scac,
+      quotesAnalyzed: validQuotes.length,
+      avgCarrierRate,
+      avgCustomerPrice,
+      currentMarginPercent,
+      avgProfitPerShipment,
+      recommendedMargin,
+      potentialProfitIncrease,
+      confidence,
+      reasoning,
+      marginConsistency
+    };
   };
 
-  const calculateRecommendedMargin = (
-    originalQuotes: BatchResponse[],
-    newQuotes: BatchResponse[],
-    priceChangePercent: number
+  const calculateOptimalMargin = (
+    avgCarrierRate: number,
+    avgCustomerPrice: number,
+    currentMarginPercent: number,
+    marginConsistency: number,
+    quoteCount: number,
+    customerName: string
   ) => {
-    // Get current margin from new quotes
-    const avgCurrentMargin = newQuotes.reduce((sum, q) => sum + (q.applied_margin_percentage || 0), 0) / newQuotes.length;
-    
-    let recommendedMargin = avgCurrentMargin;
+    let recommendedMargin = currentMarginPercent;
     let confidence: 'high' | 'medium' | 'low' = 'medium';
-    let reasoning = 'Standard margin maintained';
-    
-    if (priceChangePercent < -10) {
-      // Significant cost reduction - can afford higher margin
-      recommendedMargin = avgCurrentMargin + 3;
+    let reasoning = 'Current margin maintained';
+
+    // Base confidence on data quality
+    if (quoteCount >= 10 && marginConsistency >= 70) {
       confidence = 'high';
-      reasoning = 'Significant cost reduction allows for higher margin';
-    } else if (priceChangePercent < -5) {
-      // Moderate cost reduction
-      recommendedMargin = avgCurrentMargin + 1.5;
-      confidence = 'high';
-      reasoning = 'Cost reduction allows for margin increase';
-    } else if (priceChangePercent > 10) {
-      // Significant cost increase - may need lower margin to stay competitive
-      recommendedMargin = Math.max(avgCurrentMargin - 2, 15); // Don't go below 15%
+    } else if (quoteCount >= 5 && marginConsistency >= 50) {
       confidence = 'medium';
-      reasoning = 'Cost increase may require lower margin for competitiveness';
-    } else if (priceChangePercent > 5) {
-      // Moderate cost increase
-      recommendedMargin = Math.max(avgCurrentMargin - 1, 18); // Don't go below 18%
-      confidence = 'medium';
-      reasoning = 'Slight margin reduction to maintain competitiveness';
     } else {
-      // Minimal change
       confidence = 'low';
-      reasoning = 'Minimal cost change - current margin appropriate';
     }
-    
-    // Round to 1 decimal place
-    recommendedMargin = Math.round(recommendedMargin * 10) / 10;
-    
+
+    // Industry standard margins for freight
+    const industryMinMargin = 18;
+    const industryTargetMargin = 25;
+    const industryMaxMargin = 35;
+
+    // Analyze current performance
+    if (currentMarginPercent < industryMinMargin) {
+      // Below industry minimum - needs improvement
+      recommendedMargin = Math.min(industryMinMargin + 2, currentMarginPercent + 5);
+      reasoning = `Below industry minimum (${industryMinMargin}%) - gradual increase recommended`;
+    } else if (currentMarginPercent < industryTargetMargin) {
+      // Below target but above minimum - room for improvement
+      recommendedMargin = Math.min(industryTargetMargin, currentMarginPercent + 3);
+      reasoning = `Below industry target (${industryTargetMargin}%) - margin increase opportunity`;
+    } else if (currentMarginPercent > industryMaxMargin) {
+      // Very high margin - may be uncompetitive
+      recommendedMargin = Math.max(industryTargetMargin, currentMarginPercent - 2);
+      reasoning = `Above typical range (${industryMaxMargin}%) - consider slight reduction for competitiveness`;
+      confidence = confidence === 'high' ? 'medium' : 'low'; // Lower confidence for high margins
+    } else {
+      // In good range - minor optimization
+      if (marginConsistency < 60) {
+        recommendedMargin = currentMarginPercent + 1;
+        reasoning = 'Good margin range but inconsistent - slight standardization increase';
+      } else {
+        recommendedMargin = currentMarginPercent;
+        reasoning = 'Margin in optimal range and consistent';
+      }
+    }
+
+    // Customer-specific adjustments
+    if (customerName.toLowerCase().includes('premium') || customerName.toLowerCase().includes('enterprise')) {
+      recommendedMargin += 2;
+      reasoning += ' (premium customer adjustment)';
+    }
+
+    // Round to 1 decimal place and ensure reasonable bounds
+    recommendedMargin = Math.round(Math.max(15, Math.min(40, recommendedMargin)) * 10) / 10;
+
     return { recommendedMargin, confidence, reasoning };
+  };
+
+  const calculateVariance = (values: number[]): number => {
+    if (values.length <= 1) return 0;
+    
+    const mean = values.reduce((sum, val) => sum + val, 0) / values.length;
+    const squaredDiffs = values.map(val => Math.pow(val - mean, 2));
+    const variance = squaredDiffs.reduce((sum, diff) => sum + diff, 0) / values.length;
+    
+    return Math.sqrt(variance); // Return standard deviation as percentage
   };
 
   const groupResponsesByCarrier = (responses: BatchResponse[]) => {
@@ -318,38 +306,41 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
 
   const getConfidenceColor = (confidence: string) => {
     switch (confidence) {
-      case 'high': return 'text-green-600';
-      case 'medium': return 'text-yellow-600';
-      case 'low': return 'text-red-600';
-      default: return 'text-gray-600';
+      case 'high': return 'bg-green-100 text-green-800';
+      case 'medium': return 'bg-yellow-100 text-yellow-800';
+      case 'low': return 'bg-red-100 text-red-800';
+      default: return 'bg-gray-100 text-gray-800';
     }
   };
 
-  const getPriceChangeColor = (change: number) => {
-    if (change > 0) return 'text-red-600';
-    if (change < 0) return 'text-green-600';
+  const getMarginChangeColor = (current: number, recommended: number) => {
+    const diff = recommended - current;
+    if (diff > 1) return 'text-green-600';
+    if (diff < -1) return 'text-red-600';
     return 'text-gray-600';
   };
 
   const saveMarginRecommendations = async () => {
-    if (!project44Client || !selectedCustomer || analysis.length === 0) return;
+    if (!selectedCustomer || analysis.length === 0) return;
 
     try {
       console.log(`💾 Saving margin recommendations for customer: ${selectedCustomer}`);
       
-      // Here you would typically save to a customer-carrier margins table
-      // For now, we'll just call the callback
-      analysis.forEach(carrierAnalysis => {
-        if (carrierAnalysis.confidence === 'high' || carrierAnalysis.confidence === 'medium') {
-          onMarginRecommendation(
-            selectedCustomer,
-            carrierAnalysis.carrierName,
-            carrierAnalysis.recommendedMargin
-          );
-        }
+      // Save high and medium confidence recommendations
+      const recommendationsToSave = analysis.filter(a => 
+        a.confidence === 'high' || 
+        (a.confidence === 'medium' && a.potentialProfitIncrease > 50)
+      );
+      
+      recommendationsToSave.forEach(carrierAnalysis => {
+        onMarginRecommendation(
+          selectedCustomer,
+          carrierAnalysis.carrierName,
+          carrierAnalysis.recommendedMargin
+        );
       });
       
-      console.log('✅ Margin recommendations saved');
+      console.log(`✅ Saved ${recommendationsToSave.length} margin recommendations`);
     } catch (error) {
       console.error('❌ Failed to save margin recommendations:', error);
     }
@@ -359,7 +350,10 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
     <div className="space-y-6">
       {/* Batch Selection */}
       <div className="bg-white rounded-lg shadow-md p-6">
-        <h3 className="text-lg font-semibold text-gray-900 mb-4">Select Past Batch for Analysis</h3>
+        <h3 className="text-lg font-semibold text-gray-900 mb-4">Select Batch for Margin Analysis</h3>
+        <p className="text-sm text-gray-600 mb-4">
+          Analyze existing quotes to determine optimal customer-carrier margins based on historical pricing data.
+        </p>
         
         {loading ? (
           <div className="flex items-center justify-center py-8">
@@ -369,7 +363,7 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
         ) : batches.length === 0 ? (
           <div className="text-center py-8">
             <AlertTriangle className="h-12 w-12 text-yellow-500 mx-auto mb-4" />
-            <p className="text-gray-600">No batches with quote data found. Process some RFQs first.</p>
+            <p className="text-gray-600">No suitable batches found. Need batches with customer context and at least 5 quotes.</p>
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -389,7 +383,7 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
                     <div className="mt-2 space-y-1 text-sm text-gray-600">
                       <div>{batch.total_rfqs} RFQs • {batch.total_quotes} quotes</div>
                       <div>{new Date(batch.created_at).toLocaleDateString()}</div>
-                      {batch.customer_name && <div>Customer: {batch.customer_name}</div>}
+                      <div className="font-medium text-blue-600">Customer: {batch.customer_name}</div>
                     </div>
                   </div>
                   {selectedBatch?.id === batch.id && (
@@ -403,22 +397,22 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
       </div>
 
       {/* Analysis Controls */}
-      {selectedBatch && (
+      {selectedBatch && originalResponses.length > 0 && (
         <div className="bg-white rounded-lg shadow-md p-6">
           <div className="flex items-center justify-between mb-4">
             <div>
-              <h3 className="text-lg font-semibold text-gray-900">Margin Analysis Setup</h3>
+              <h3 className="text-lg font-semibold text-gray-900">Margin Analysis</h3>
               <p className="text-sm text-gray-600 mt-1">
-                Reprocess "{selectedBatch.batch_name}" with current pricing settings to analyze margin opportunities
+                Analyze {originalResponses.length} existing quotes from "{selectedBatch.batch_name}" to determine optimal margins
               </p>
             </div>
             
             <button
-              onClick={reprocessForMarginAnalysis}
-              disabled={processing || batchRequests.length === 0}
+              onClick={analyzeExistingMargins}
+              disabled={analyzing}
               className="flex items-center space-x-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors"
             >
-              {processing ? (
+              {analyzing ? (
                 <>
                   <Loader className="h-4 w-4 animate-spin" />
                   <span>Analyzing...</span>
@@ -426,105 +420,44 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
               ) : (
                 <>
                   <Calculator className="h-4 w-4" />
-                  <span>Start Margin Analysis</span>
+                  <span>Analyze Margins</span>
                 </>
               )}
             </button>
           </div>
 
-          {/* Error Display */}
-          {error && (
-            <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg">
-              <div className="flex items-start space-x-3">
-                <AlertTriangle className="h-5 w-5 text-red-600 flex-shrink-0 mt-0.5" />
-                <div className="text-sm text-red-800">
-                  <p className="font-medium mb-1">Analysis Error:</p>
-                  <p>{error}</p>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* Debug Information */}
-          {debugInfo && (
-            <div className="mb-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
-              <div className="text-sm text-blue-800">
-                <p className="font-medium mb-2">Analysis Debug Information:</p>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <div>
-                    <div className="font-medium">Original Carriers ({debugInfo.originalCarriers.length}):</div>
-                    <div className="text-xs max-h-20 overflow-y-auto">
-                      {debugInfo.originalCarriers.join(', ') || 'None'}
-                    </div>
-                  </div>
-                  <div>
-                    <div className="font-medium">New Carriers ({debugInfo.newCarriers.length}):</div>
-                    <div className="text-xs max-h-20 overflow-y-auto">
-                      {debugInfo.newCarriers.join(', ') || 'None'}
-                    </div>
-                  </div>
-                  <div>
-                    <div className="font-medium">Matched Carriers ({debugInfo.matchedCarriers.length}):</div>
-                    <div className="text-xs max-h-20 overflow-y-auto">
-                      {debugInfo.matchedCarriers.join(', ') || 'None'}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* Progress */}
-          {processing && (
-            <div className="mb-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
-              <div className="flex items-center space-x-3">
-                <Loader className="h-5 w-5 text-blue-600 animate-spin" />
-                <div className="flex-1">
-                  <div className="text-sm font-medium text-blue-900">
-                    Processing {progress.current} of {progress.total}
-                  </div>
-                  <div className="text-xs text-blue-700">{progress.item}</div>
-                  <div className="w-full bg-blue-200 rounded-full h-2 mt-2">
-                    <div
-                      className="bg-blue-600 h-2 rounded-full transition-all duration-300"
-                      style={{ 
-                        width: `${progress.total > 0 ? (progress.current / progress.total) * 100 : 0}%` 
-                      }}
-                    />
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* Current Settings Display */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          {/* Batch Info */}
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             <div className="bg-gray-50 rounded-lg p-3">
               <div className="text-sm text-gray-600">Customer</div>
-              <div className="font-medium">{selectedCustomer || 'No customer selected'}</div>
+              <div className="font-medium">{selectedBatch.customer_name}</div>
             </div>
             <div className="bg-gray-50 rounded-lg p-3">
-              <div className="text-sm text-gray-600">Pricing Method</div>
+              <div className="text-sm text-gray-600">Total Quotes</div>
+              <div className="font-medium">{originalResponses.length}</div>
+            </div>
+            <div className="bg-gray-50 rounded-lg p-3">
+              <div className="text-sm text-gray-600">Unique Carriers</div>
               <div className="font-medium">
-                {pricingSettings.usesCustomerMargins ? 'Customer Margins' : 'Flat Margin'}
+                {new Set(originalResponses.map(r => r.carrier_name)).size}
               </div>
             </div>
             <div className="bg-gray-50 rounded-lg p-3">
-              <div className="text-sm text-gray-600">Batch Data</div>
-              <div className="font-medium">{batchRequests.length} RFQs, {originalResponses.length} quotes</div>
+              <div className="text-sm text-gray-600">Date Range</div>
+              <div className="font-medium">{new Date(selectedBatch.created_at).toLocaleDateString()}</div>
             </div>
           </div>
         </div>
       )}
 
-      {/* Margin Analysis Results */}
+      {/* Analysis Results */}
       {analysis.length > 0 && (
         <div className="bg-white rounded-lg shadow-md p-6">
           <div className="flex items-center justify-between mb-6">
             <div>
-              <h3 className="text-lg font-semibold text-gray-900">Carrier Margin Analysis Results</h3>
+              <h3 className="text-lg font-semibold text-gray-900">Margin Optimization Results</h3>
               <p className="text-sm text-gray-600 mt-1">
-                Recommended margins per carrier based on price change analysis
+                Customer-carrier margin recommendations based on historical quote analysis
               </p>
             </div>
             
@@ -534,119 +467,134 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
                 className="flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
               >
                 <Save className="h-4 w-4" />
-                <span>Save Recommendations</span>
+                <span>Save High-Value Recommendations</span>
               </button>
             )}
           </div>
 
+          {/* Overall Statistics */}
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+            <div className="bg-blue-50 rounded-lg p-4">
+              <div className="text-2xl font-bold text-blue-600">{overallStats.carriersAnalyzed}</div>
+              <div className="text-sm text-blue-700">Carriers Analyzed</div>
+              <div className="text-xs text-blue-600">From {overallStats.totalQuotes} total quotes</div>
+            </div>
+            <div className="bg-green-50 rounded-lg p-4">
+              <div className="text-2xl font-bold text-green-600">{overallStats.avgMargin.toFixed(1)}%</div>
+              <div className="text-sm text-green-700">Current Avg Margin</div>
+              <div className="text-xs text-green-600">Across all carriers</div>
+            </div>
+            <div className="bg-purple-50 rounded-lg p-4">
+              <div className="text-2xl font-bold text-purple-600">{formatCurrency(overallStats.totalProfitOpportunity)}</div>
+              <div className="text-sm text-purple-700">Total Profit Opportunity</div>
+              <div className="text-xs text-purple-600">Per shipment improvement</div>
+            </div>
+            <div className="bg-orange-50 rounded-lg p-4">
+              <div className="text-2xl font-bold text-orange-600">
+                {analysis.filter(a => a.confidence === 'high').length}
+              </div>
+              <div className="text-sm text-orange-700">High Confidence</div>
+              <div className="text-xs text-orange-600">Recommendations</div>
+            </div>
+          </div>
+
+          {/* Carrier Analysis Table */}
           <div className="overflow-x-auto">
             <table className="w-full">
               <thead className="bg-gray-50">
                 <tr>
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Carrier</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Price Change</th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Current Margin</th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Recommended</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Profit Increase</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Data Quality</th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Confidence</th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Reasoning</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-200">
-                {analysis.map((carrierAnalysis) => {
-                  const currentAvgMargin = newResponses
-                    .filter(r => r.carrier_name === carrierAnalysis.carrierName)
-                    .reduce((sum, r, _, arr) => sum + (r.applied_margin_percentage || 0) / arr.length, 0);
-
-                  return (
-                    <tr key={carrierAnalysis.carrierName} className="hover:bg-gray-50">
-                      <td className="px-4 py-4 whitespace-nowrap">
-                        <div>
-                          <div className="font-medium text-gray-900">{carrierAnalysis.carrierName}</div>
-                          {carrierAnalysis.carrierScac && (
-                            <div className="text-sm text-gray-500">SCAC: {carrierAnalysis.carrierScac}</div>
-                          )}
+                {analysis.map((carrierAnalysis) => (
+                  <tr key={carrierAnalysis.carrierName} className="hover:bg-gray-50">
+                    <td className="px-4 py-4 whitespace-nowrap">
+                      <div>
+                        <div className="font-medium text-gray-900">{carrierAnalysis.carrierName}</div>
+                        {carrierAnalysis.carrierScac && (
+                          <div className="text-sm text-gray-500">SCAC: {carrierAnalysis.carrierScac}</div>
+                        )}
+                        <div className="text-xs text-gray-400">{carrierAnalysis.quotesAnalyzed} quotes analyzed</div>
+                      </div>
+                    </td>
+                    
+                    <td className="px-4 py-4 whitespace-nowrap">
+                      <div className="font-medium">{carrierAnalysis.currentMarginPercent.toFixed(1)}%</div>
+                      <div className="text-sm text-gray-500">{formatCurrency(carrierAnalysis.avgProfitPerShipment)} avg profit</div>
+                    </td>
+                    
+                    <td className="px-4 py-4 whitespace-nowrap">
+                      <div className="flex items-center space-x-2">
+                        <div className={`font-bold ${getMarginChangeColor(carrierAnalysis.currentMarginPercent, carrierAnalysis.recommendedMargin)}`}>
+                          {carrierAnalysis.recommendedMargin.toFixed(1)}%
                         </div>
-                      </td>
-                      
-                      <td className="px-4 py-4 whitespace-nowrap">
-                        <div className="flex items-center space-x-2">
-                          <div className={`font-medium ${getPriceChangeColor(carrierAnalysis.priceChangePercent)}`}>
-                            {carrierAnalysis.priceChangePercent > 0 ? '+' : ''}{carrierAnalysis.priceChangePercent.toFixed(1)}%
-                          </div>
-                          {carrierAnalysis.priceChangePercent > 0 ? (
-                            <TrendingUp className="h-4 w-4 text-red-500" />
-                          ) : carrierAnalysis.priceChangePercent < 0 ? (
-                            <TrendingDown className="h-4 w-4 text-green-500" />
-                          ) : null}
-                        </div>
-                        <div className="text-xs text-gray-500">
-                          {formatCurrency(carrierAnalysis.originalAvgPrice)} → {formatCurrency(carrierAnalysis.newAvgPrice)}
-                        </div>
-                      </td>
-                      
-                      <td className="px-4 py-4 whitespace-nowrap">
-                        <div className="font-medium">{currentAvgMargin.toFixed(1)}%</div>
-                        <div className="text-xs text-gray-500">{carrierAnalysis.quoteCount} quotes</div>
-                      </td>
-                      
-                      <td className="px-4 py-4 whitespace-nowrap">
-                        <div className="flex items-center space-x-2">
-                          <div className="font-bold text-green-600">{carrierAnalysis.recommendedMargin.toFixed(1)}%</div>
-                          {carrierAnalysis.recommendedMargin > currentAvgMargin ? (
-                            <ArrowRight className="h-4 w-4 text-green-500" />
-                          ) : carrierAnalysis.recommendedMargin < currentAvgMargin ? (
-                            <ArrowRight className="h-4 w-4 text-red-500 transform rotate-180" />
-                          ) : null}
-                        </div>
-                        <div className="text-xs text-gray-500">
-                          {((carrierAnalysis.recommendedMargin - currentAvgMargin) > 0 ? '+' : '')}
-                          {(carrierAnalysis.recommendedMargin - currentAvgMargin).toFixed(1)}% change
-                        </div>
-                      </td>
-                      
-                      <td className="px-4 py-4 whitespace-nowrap">
-                        <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
-                          carrierAnalysis.confidence === 'high' ? 'bg-green-100 text-green-800' :
-                          carrierAnalysis.confidence === 'medium' ? 'bg-yellow-100 text-yellow-800' :
-                          'bg-red-100 text-red-800'
-                        }`}>
-                          {carrierAnalysis.confidence.toUpperCase()}
-                        </span>
-                      </td>
-                      
-                      <td className="px-4 py-4">
-                        <div className="text-sm text-gray-600 max-w-xs">
-                          {carrierAnalysis.reasoning}
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
+                        {carrierAnalysis.recommendedMargin > carrierAnalysis.currentMarginPercent && (
+                          <TrendingUp className="h-4 w-4 text-green-500" />
+                        )}
+                        {carrierAnalysis.recommendedMargin < carrierAnalysis.currentMarginPercent && (
+                          <TrendingDown className="h-4 w-4 text-red-500" />
+                        )}
+                      </div>
+                      <div className="text-xs text-gray-500">
+                        {((carrierAnalysis.recommendedMargin - carrierAnalysis.currentMarginPercent) > 0 ? '+' : '')}
+                        {(carrierAnalysis.recommendedMargin - carrierAnalysis.currentMarginPercent).toFixed(1)}% change
+                      </div>
+                    </td>
+                    
+                    <td className="px-4 py-4 whitespace-nowrap">
+                      <div className="font-bold text-green-600">{formatCurrency(carrierAnalysis.potentialProfitIncrease)}</div>
+                      <div className="text-xs text-gray-500">per shipment</div>
+                    </td>
+                    
+                    <td className="px-4 py-4 whitespace-nowrap">
+                      <div className="text-sm">
+                        <div>{carrierAnalysis.marginConsistency.toFixed(0)}% consistent</div>
+                        <div className="text-xs text-gray-500">{carrierAnalysis.quotesAnalyzed} quotes</div>
+                      </div>
+                    </td>
+                    
+                    <td className="px-4 py-4 whitespace-nowrap">
+                      <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${getConfidenceColor(carrierAnalysis.confidence)}`}>
+                        {carrierAnalysis.confidence.toUpperCase()}
+                      </span>
+                    </td>
+                    
+                    <td className="px-4 py-4">
+                      <div className="text-sm text-gray-600 max-w-xs">
+                        {carrierAnalysis.reasoning}
+                      </div>
+                    </td>
+                  </tr>
+                ))}
               </tbody>
             </table>
           </div>
 
-          {/* Analysis Summary */}
-          <div className="mt-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
-            <h4 className="text-sm font-medium text-blue-900 mb-2">Analysis Summary</h4>
+          {/* Industry Benchmarks */}
+          <div className="mt-6 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
+            <h4 className="text-sm font-medium text-yellow-900 mb-2 flex items-center space-x-2">
+              <Award className="h-4 w-4" />
+              <span>Industry Margin Benchmarks</span>
+            </h4>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
               <div>
-                <div className="text-blue-700">High Confidence Recommendations:</div>
-                <div className="font-bold text-blue-900">
-                  {analysis.filter(a => a.confidence === 'high').length} carriers
-                </div>
+                <div className="text-yellow-700">Minimum Acceptable:</div>
+                <div className="font-bold text-yellow-900">18% - 20%</div>
               </div>
               <div>
-                <div className="text-blue-700">Margin Increase Opportunities:</div>
-                <div className="font-bold text-blue-900">
-                  {analysis.filter(a => a.priceChangePercent < -5).length} carriers
-                </div>
+                <div className="text-yellow-700">Industry Target:</div>
+                <div className="font-bold text-yellow-900">25% - 28%</div>
               </div>
               <div>
-                <div className="text-blue-700">Competitive Pressure:</div>
-                <div className="font-bold text-blue-900">
-                  {analysis.filter(a => a.priceChangePercent > 5).length} carriers
-                </div>
+                <div className="text-yellow-700">Premium Range:</div>
+                <div className="font-bold text-yellow-900">30% - 35%</div>
               </div>
             </div>
           </div>

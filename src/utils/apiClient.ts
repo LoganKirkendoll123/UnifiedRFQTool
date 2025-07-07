@@ -8,6 +8,7 @@ import {
   CapacityProvider,
   CapacityProviderIdentifier,
   LineItem,
+import { saveRFQRequest } from './rfqStorage';
   AccessorialService,
   TimeWindow,
   Address,
@@ -416,6 +417,17 @@ export class Project44APIClient {
     isFTLMode: boolean = false,
     isReeferMode: boolean = false
   ): Promise<Quote[]> {
+    // Log request to database
+    try {
+      const quotingDecision = isReeferMode ? 'freshx' : 
+                             isVolumeMode ? 'project44-volume' : 
+                             isFTLMode ? 'project44-ftl' : 'project44-standard';
+      const quotingReason = `${quotingDecision.toUpperCase()} request for ${rfq.fromZip} → ${rfq.toZip}`;
+      await saveRFQRequest(rfq, quotingDecision, quotingReason);
+    } catch (error) {
+      console.error('Failed to log Project44 request:', error);
+    }
+
     const token = await this._getAccessToken();
     
     const modeDescription = isReeferMode ? 'Refrigerated LTL' : 
@@ -642,6 +654,17 @@ export class Project44APIClient {
     isFTLMode: boolean = false,
     isReeferMode: boolean = false
   ): Promise<Quote[]> {
+    // Log request to database
+    try {
+      const quotingDecision = isReeferMode ? 'freshx' : 
+                             isVolumeMode ? 'project44-volume' : 
+                             isFTLMode ? 'project44-ftl' : 'project44-standard';
+      const quotingReason = `${quotingDecision.toUpperCase()} account group request for ${rfq.fromZip} → ${rfq.toZip}`;
+      await saveRFQRequest(rfq, quotingDecision, quotingReason);
+    } catch (error) {
+      console.error('Failed to log Project44 account group request:', error);
+    }
+
     const token = await this._getAccessToken();
     
     const modeDescription = isReeferMode ? 'Refrigerated LTL' : 
@@ -1020,6 +1043,13 @@ export class FreshXAPIClient {
   }
 
   async getQuotes(rfq: RFQRow): Promise<Quote[]> {
+    // Log request to database
+    try {
+      await saveRFQRequest(rfq, 'freshx', `FreshX reefer request for ${rfq.fromZip} → ${rfq.toZip}`);
+    } catch (error) {
+      console.error('Failed to log FreshX request:', error);
+    }
+
     console.log('🌡️ Getting FreshX reefer quotes for:', {
       route: `${rfq.fromZip} → ${rfq.toZip}`,
       pallets: rfq.pallets,

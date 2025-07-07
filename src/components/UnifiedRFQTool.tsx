@@ -233,7 +233,7 @@ export const UnifiedRFQTool: React.FC<UnifiedRFQToolProps> = ({
   
   const loadPastRFQBatches = async () => {
     try {
-      let query = supabase.from('rfq_batches').select('id, batch_name, customer_name, created_at, total_rfqs, rfq_data');
+      let query = supabase.from('rfq_batches').select('id, batch_name, customer_name, created_at, total_rfqs');
       
       if (customerFilter) {
         query = query.eq('customer_name', customerFilter);
@@ -256,7 +256,8 @@ export const UnifiedRFQTool: React.FC<UnifiedRFQToolProps> = ({
       
       const transformedData = data.map(batch => ({
         ...batch,
-        shipment_count: batch.total_rfqs || 0
+        shipment_count: batch.total_rfqs || 0,
+        rfq_data: [] // Will be loaded separately when batch is selected
       }));
       
       setPastRFQBatches(transformedData);

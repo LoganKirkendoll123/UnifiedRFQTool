@@ -1,0 +1,35 @@
+[build]
+  publish = "dist"
+  command = "npm run build"
+
+[functions]
+  from = "/api/project44/*"
+  to = "/.netlify/functions/project44-proxy"
+  status = 200
+
+[[redirects]]
+  from = "/api/project44-oauth/*"
+  to = "/.netlify/functions/project44-oauth-proxy"
+  status = 200
+
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Frame-Options = "DENY"
+    X-XSS-Protection = "1; mode=block"
+    X-Content-Type-Options = "nosniff"
+    Referrer-Policy = "strict-origin-when-cross-origin"
+
+[[headers]]
+  for = "/.netlify/functions/*"
+  [headers.values]
+    Access-Control-Allow-Origin = "*"
+    Access-Control-Allow-Headers = "Content-Type, Authorization"
+    Access-Control-Allow-Methods = "GET, POST, PUT, DELETE, OPTIONS"
+
+# Increase function timeout to 60 seconds (maximum for Netlify)
+[functions.project44-proxy]
+  timeout = 60
+
+[functions.project44-oauth-proxy]
+  timeout = 60

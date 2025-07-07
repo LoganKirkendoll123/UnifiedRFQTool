@@ -274,177 +274,6 @@ export class Project44APIClient {
     }
   }
 
-  // Create a new batch for tracking RFQ requests
-  async createBatch(
-    batchName: string,
-    customerName?: string,
-    pricingSettings?: any,
-    selectedCarriers?: any,
-    processingMode: string = 'smart',
-    createdBy: string = 'anonymous'
-  ): Promise<string> {
-    try {
-      const batchId = uuidv4();
-      
-      const { error } = await supabase
-        .from('rfq_batches')
-        .insert({
-          id: batchId,
-          batch_name: batchName,
-          customer_name: customerName,
-          pricing_settings: pricingSettings || {},
-          selected_carriers: selectedCarriers || {},
-          processing_mode: processingMode,
-          created_by: createdBy
-        });
-
-      if (error) {
-        console.error('❌ Failed to create batch:', error);
-        throw new Error(`Failed to create batch: ${error.message}`);
-      }
-
-      this.currentBatchId = batchId;
-      console.log(`✅ Created batch: ${batchId} (${batchName})`);
-      return batchId;
-    } catch (error) {
-      console.error('❌ Error creating batch:', error);
-      throw error;
-    }
-  }
-
-  // Update batch statistics
-  async updateBatchStats(
-    batchId: string,
-    stats: {
-      total_rfqs?: number;
-      successful_rfqs?: number;
-      total_quotes?: number;
-      best_total_price?: number;
-      total_profit?: number;
-    }
-  ): Promise<void> {
-    try {
-      const { error } = await supabase
-        .from('rfq_batches')
-        .update({
-          ...stats,
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', batchId);
-
-      if (error) {
-        console.error('❌ Failed to update batch stats:', error);
-        throw new Error(`Failed to update batch stats: ${error.message}`);
-      }
-
-      console.log(`✅ Updated batch stats for: ${batchId}`);
-    } catch (error) {
-      console.error('❌ Error updating batch stats:', error);
-      throw error;
-    }
-  }
-
-  // Save RFQ request to database
-  async saveRFQRequest(
-    batchId: string,
-    requestPayload: any,
-    quotingDecision: string,
-    quotingReason: string,
-    rfqData: RFQRow
-  ): Promise<string> {
-    try {
-      const requestId = uuidv4();
-      
-      const { error } = await supabase
-        .from('rfq_requests')
-        .insert({
-          id: requestId,
-          batch_id: batchId,
-          request_payload: requestPayload,
-          quoting_decision: quotingDecision,
-          quoting_reason: quotingReason,
-          from_zip: rfqData.fromZip,
-          to_zip: rfqData.toZip,
-          pallets: rfqData.pallets,
-          gross_weight: rfqData.grossWeight,
-          is_reefer: rfqData.isReefer || false,
-          temperature: rfqData.temperature,
-          commodity: rfqData.commodity
-        });
-
-      if (error) {
-        console.error('❌ Failed to save RFQ request:', error);
-        throw new Error(`Failed to save RFQ request: ${error.message}`);
-      }
-
-      console.log(`✅ Saved RFQ request: ${requestId}`);
-      return requestId;
-    } catch (error) {
-      console.error('❌ Error saving RFQ request:', error);
-      throw error;
-    }
-  }
-
-  // Save RFQ responses to database
-  async saveRFQResponses(
-    requestId: string,
-    batchId: string,
-    quotes: any[]
-  ): Promise<void> {
-    try {
-      const responses = quotes.map(quote => ({
-        id: uuidv4(),
-        request_id: requestId,
-        batch_id: batchId,
-        carrier_name: quote.carrier.name,
-        carrier_code: quote.carrierCode,
-        carrier_scac: quote.carrier.scac,
-        quote_id: quote.id || quote.quoteId.toString(),
-        service_level_code: quote.serviceLevel?.code,
-        service_level_description: quote.serviceLevel?.description,
-        carrier_total_rate: quote.carrierTotalRate || (quote.baseRate + quote.fuelSurcharge + quote.premiumsAndDiscounts),
-        customer_price: quote.customerPrice || 0,
-        profit: quote.profit || 0,
-        markup_applied: quote.markupApplied || 0,
-        applied_margin_type: quote.appliedMarginType,
-        applied_margin_percentage: quote.appliedMarginPercentage,
-        is_custom_price: quote.isCustomPrice || false,
-        transit_days: quote.transitDays,
-        quote_mode: quote.quoteMode,
-        raw_response: {
-          quote_id: quote.id || quote.quoteId,
-          carrier: quote.carrier,
-          service_level: quote.serviceLevel,
-          rate_quote_detail: quote.rateQuoteDetail,
-          transit_days: quote.transitDays,
-          delivery_date_time: quote.deliveryDateTime,
-          quote_expiration: quote.quoteExpirationDateTime,
-          submitted_by: quote.submittedBy
-        },
-        charge_breakdown: quote.chargeBreakdown
-      }));
-
-      const { error } = await supabase
-        .from('rfq_responses')
-        .insert(responses);
-
-      if (error) {
-        console.error('❌ Failed to save RFQ responses:', error);
-        throw new Error(`Failed to save RFQ responses: ${error.message}`);
-      }
-
-      console.log(`✅ Saved ${responses.length} RFQ responses for request: ${requestId}`);
-    } catch (error) {
-      console.error('❌ Error saving RFQ responses:', error);
-      throw error;
-    }
-  }
-
-  // Set current batch ID
-  setCurrentBatchId(batchId: string): void {
-    this.currentBatchId = batchId;
-  }
-
   // Get current batch ID
   getCurrentBatchId(): string | null {
     return this.currentBatchId;
@@ -830,26 +659,16 @@ export class Project44APIClient {
                            isVolumeMode ? 'Volume LTL (VLTL)' : 
                            isFTLMode ? 'Full Truckload' : 'Standard LTL';
     
-    const quotingDecision = isReeferMode ? 'freshx' : 
-                          isVolumeMode ? 'project44-volume' : 
-                          isFTLMode ? 'project44-ftl' : 'project44-standard';
+    let quotingDecision = isReeferMode ? 'freshx' : 
+                         isVolumeMode ? 'project44-volume' : 
+                         isFTLMode ? 'project44-ftl' : 'project44-standard';
     
-    const quotingReason = `${modeDescription} quoting for ${rfq.pallets} pallets, ${rfq.grossWeight.toLocaleString()} lbs`;
+    let quotingReason = `${modeDescription} quoting for ${rfq.pallets} pallets, ${rfq.grossWeight.toLocaleString()} lbs`;
     
     console.log(`💾 ENFORCING DATABASE TRACKING: Saving request before API call`);
-    const requestId = await this.saveRFQRequest(rfq, useBatchId, quotingDecision, quotingReason);
+    const savedRequestId = await this.saveRFQRequest(rfq, useBatchId, quotingDecision, quotingReason);
 
     const token = await this._getAccessToken();
-    
-    // Determine quoting decision for database tracking
-    const quotingDecision = isReeferMode ? 'freshx' : 
-                           isVolumeMode ? 'project44-volume' : 
-                           isFTLMode ? 'project44-ftl' : 'project44-standard';
-    
-    const quotingReason = isReeferMode ? 'Refrigerated shipment routed to specialized reefer network' :
-                         isVolumeMode ? `Large shipment (${rfq.pallets} pallets, ${rfq.grossWeight.toLocaleString()} lbs) routed to Volume LTL` :
-                         isFTLMode ? 'Full truckload shipment' :
-                         `Standard shipment (${rfq.pallets} pallets, ${rfq.grossWeight.toLocaleString()} lbs) routed to Standard LTL`;
     
     // Clean and validate address data
     // Ensure ZIP codes are 5 digits
@@ -951,24 +770,6 @@ export class Project44APIClient {
     }
 
     console.log('📤 Sending comprehensive request payload:', JSON.stringify(requestPayload, null, 2));
-
-    // Save request to database if batch ID is provided
-    let requestId: string | null = null;
-    const useBatchId = batchId || this.currentBatchId;
-    
-    if (useBatchId) {
-      try {
-        requestId = await this.saveRFQRequest(
-          useBatchId,
-          requestPayload,
-          quotingDecision,
-          quotingReason,
-          rfq
-        );
-      } catch (error) {
-        console.warn('⚠️ Failed to save request to database, continuing with API call:', error);
-      }
-    }
 
     const response = await fetch(`${baseUrl}${endpoint}`, {
       method: 'POST',
@@ -1081,7 +882,7 @@ export class Project44APIClient {
     
     // ENFORCE: Save responses after receiving API response
     console.log(`💾 ENFORCING DATABASE TRACKING: Saving ${quotes.length} responses`);
-    await this.saveRFQResponses(requestId, useBatchId, quotes);
+    await this.saveRFQResponses(savedRequestId, useBatchId, quotes);
     
     return quotes;
   }
@@ -1106,14 +907,14 @@ export class Project44APIClient {
                            isVolumeMode ? 'Volume LTL (VLTL)' : 
                            isFTLMode ? 'Full Truckload' : 'Standard LTL';
     
-    const quotingDecision = isReeferMode ? 'freshx' : 
-                          isVolumeMode ? 'project44-volume' : 
-                          isFTLMode ? 'project44-ftl' : 'project44-standard';
+    let quotingDecision = isReeferMode ? 'freshx' : 
+                         isVolumeMode ? 'project44-volume' : 
+                         isFTLMode ? 'project44-ftl' : 'project44-standard';
     
-    const quotingReason = `${modeDescription} group quoting for account group ${accountGroupCode}`;
+    let quotingReason = `${modeDescription} group quoting for account group ${accountGroupCode}`;
     
     console.log(`💾 ENFORCING DATABASE TRACKING: Saving group request before API call`);
-    const requestId = await this.saveRFQRequest(rfq, useBatchId, quotingDecision, quotingReason);
+    const savedRequestId = await this.saveRFQRequest(rfq, useBatchId, quotingDecision, quotingReason);
 
     const token = await this._getAccessToken();
     
@@ -1176,24 +977,6 @@ export class Project44APIClient {
     }
 
     console.log('📤 Sending group request payload:', JSON.stringify(requestPayload, null, 2));
-
-    // Save request to database if batch ID is provided
-    let requestId: string | null = null;
-    const useBatchId = batchId || this.currentBatchId;
-    
-    if (useBatchId) {
-      try {
-        requestId = await this.saveRFQRequest(
-          useBatchId,
-          requestPayload,
-          quotingDecision,
-          quotingReason,
-          rfq
-        );
-      } catch (error) {
-        console.warn('⚠️ Failed to save request to database, continuing with API call:', error);
-      }
-    }
 
     const response = await fetch(`${baseUrl}${endpoint}`, {
       method: 'POST',
@@ -1290,7 +1073,7 @@ export class Project44APIClient {
     
     // ENFORCE: Save responses after receiving API response
     console.log(`💾 ENFORCING DATABASE TRACKING: Saving ${quotes.length} group responses`);
-    await this.saveRFQResponses(requestId, useBatchId, quotes);
+    await this.saveRFQResponses(savedRequestId, useBatchId, quotes);
     
     return quotes;
   }
@@ -1500,7 +1283,6 @@ export class Project44APIClient {
       startTime: rfq.deliveryStartTime || '08:00',
       endTime: rfq.deliveryEndTime || '17:00'
     };
-    
   }
 }
 
@@ -1618,7 +1400,7 @@ export class FreshXAPIClient {
     const quotingReason = `FreshX reefer quoting for ${rfq.pallets} pallets, ${rfq.grossWeight.toLocaleString()} lbs, ${rfq.temperature || 'AMBIENT'} temperature`;
     
     console.log(`💾 ENFORCING DATABASE TRACKING: Saving FreshX request before API call`);
-    const requestId = await this.saveRFQRequest(rfq, useBatchId, quotingDecision, quotingReason);
+    const savedRequestId = await this.saveRFQRequest(rfq, useBatchId, quotingDecision, quotingReason);
 
     console.log('🌡️ Getting FreshX reefer quotes for:', {
       route: `${rfq.fromZip} → ${rfq.toZip}`,
@@ -1646,24 +1428,6 @@ export class FreshXAPIClient {
     };
 
     console.log('📤 Sending FreshX request:', requestPayload);
-
-    // Save request to database if batch ID is provided
-    let requestId: string | null = null;
-    const useBatchId = batchId || this.currentBatchId;
-    
-    if (useBatchId) {
-      try {
-        requestId = await this.saveRFQRequest(
-          useBatchId,
-          requestPayload,
-          'freshx',
-          `FreshX reefer quotes for ${rfq.temperature || 'temperature-controlled'} shipment`,
-          rfq
-        );
-      } catch (error) {
-        console.warn('⚠️ Failed to save FreshX request to database, continuing with API call:', error);
-      }
-    }
 
     try {
       const response = await fetch(apiUrl, {
@@ -1735,7 +1499,7 @@ export class FreshXAPIClient {
       
       // ENFORCE: Save responses after receiving API response
       console.log(`💾 ENFORCING DATABASE TRACKING: Saving ${transformedQuotes.length} FreshX responses`);
-      await this.saveRFQResponses(requestId, useBatchId, transformedQuotes);
+      await this.saveRFQResponses(savedRequestId, useBatchId, transformedQuotes);
       
       return transformedQuotes;
 

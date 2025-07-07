@@ -233,7 +233,7 @@ export const UnifiedRFQTool: React.FC<UnifiedRFQToolProps> = ({
   
   const loadPastRFQBatches = async () => {
     try {
-      let query = supabase.from('mass_rfq_batches').select('id, batch_name, customer_name, created_at, shipment_count, rfq_data');
+      let query = supabase.from('rfq_batches').select('id, batch_name, customer_name, created_at, total_rfqs, rfq_data');
       
       if (customerFilter) {
         query = query.eq('customer_name', customerFilter);
@@ -254,7 +254,12 @@ export const UnifiedRFQTool: React.FC<UnifiedRFQToolProps> = ({
         return;
       }
       
-      setPastRFQBatches(data);
+      const transformedData = data.map(batch => ({
+        ...batch,
+        shipment_count: batch.total_rfqs || 0
+      }));
+      
+      setPastRFQBatches(transformedData);
     } catch (error) {
       console.error('Failed to load past RFQ batches:', error);
     }
@@ -263,7 +268,7 @@ export const UnifiedRFQTool: React.FC<UnifiedRFQToolProps> = ({
   const loadPastRFQData = async (batchId: string) => {
     try {
       const { data, error } = await supabase
-        .from('mass_rfq_batches')
+        .from('rfq_batches')
         .select('rfq_data')
         .eq('id', batchId)
         .single();

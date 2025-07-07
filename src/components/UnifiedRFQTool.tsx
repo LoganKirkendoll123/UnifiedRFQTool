@@ -33,7 +33,7 @@ import { CarrierSelection } from './CarrierSelection';
 import { ProcessingStatus } from './ProcessingStatus';
 import { ResultsTable } from './ResultsTable';
 import { PastRFQSelector } from './PastRFQSelector';
-import { parseCSV, parseXLSX } from './utils/fileParser';
+import { parseCSV, parseXLSX } from '../utils/fileParser';
 import { useRFQProcessor } from '../hooks/useRFQProcessor';
 import { useCarrierManagement } from '../hooks/useCarrierManagement';
 import { RFQRow, PricingSettings } from '../types';

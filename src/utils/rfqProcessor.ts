@@ -1,11 +1,14 @@
 import { RFQRow, ProcessingResult, QuoteWithPricing, PricingSettings } from '../types';
 import { Project44APIClient, FreshXAPIClient } from './apiClient';
 import { calculatePricingWithCustomerMargins } from './pricingCalculator';
+import { v4 as uuidv4 } from 'uuid';
 
 export interface RFQProcessingOptions {
   selectedCarriers: { [carrierId: string]: boolean };
   pricingSettings: PricingSettings;
   selectedCustomer: string;
+  batchName?: string;
+  createdBy?: string;
   onProgress?: (current: number, total: number, currentItem?: string) => void;
   onCarrierProgress?: (current: number, total: number) => void;
 }
@@ -16,10 +19,63 @@ export interface SmartQuotingResult extends ProcessingResult {
 }
 
 export class RFQProcessor {
+  private currentBatchId: string | null = null;
+
   constructor(
     private project44Client: Project44APIClient | null,
     private freshxClient: FreshXAPIClient | null
   ) {}
+
+  // Create a new batch for processing
+  async createBatch(
+    batchName: string,
+    options: RFQProcessingOptions
+  ): Promise<string> {
+    try {
+      // Create batch using Project44 client (it has the database methods)
+      if (this.project44Client) {
+        const batchId = await this.project44Client.createBatch(
+          batchName,
+          options.selectedCustomer,
+          options.pricingSettings,
+          options.selectedCarriers,
+          'smart',
+          options.createdBy || 'anonymous'
+        );
+        
+        this.currentBatchId = batchId;
+        
+        // Set batch ID on both clients
+        this.project44Client.setCurrentBatchId(batchId);
+        if (this.freshxClient) {
+          this.freshxClient.setCurrentBatchId(batchId);
+        }
+        
+        return batchId;
+      } else {
+        throw new Error('Project44 client not available for batch creation');
+      }
+    } catch (error) {
+      console.error('❌ Failed to create batch:', error);
+      throw error;
+    }
+  }
+
+  // Update batch statistics
+  async updateBatchStats(
+    batchId: string,
+    stats: {
+      total_rfqs?: number;
+      successful_rfqs?: number;
+      total_quotes?: number;
+      best_total_price?: number;
+      total_profit?: number;
+    }
+  ): Promise<void> {
+    if (this.project44Client) {
+      await this.project44Client.updateBatchStats(batchId, stats);
+    }
+  }
 
   // Smart quoting classification function
   private classifyShipment(rfq: RFQRow): {
@@ -53,11 +109,14 @@ export class RFQProcessor {
   async processSingleRFQ(
     rfq: RFQRow,
     options: RFQProcessingOptions,
-    rowIndex: number = 0
+    rowIndex: number = 0,
+    batchId?: string
   ): Promise<SmartQuotingResult> {
     const selectedCarrierIds = Object.entries(options.selectedCarriers)
       .filter(([_, selected]) => selected)
       .map(([carrierId, _]) => carrierId);
+
+    const useBatchId = batchId || this.currentBatchId;
 
     // Classify the shipment using the smart quoting logic
     const classification = this.classifyShipment(rfq);
@@ -78,14 +137,14 @@ export class RFQProcessor {
 
       if (classification.quoting === 'freshx' && this.freshxClient) {
         console.log(`🌡️ Getting FreshX quotes for RFQ ${rowIndex + 1}`);
-        quotes = await this.freshxClient.getQuotes(rfq);
+        quotes = await this.freshxClient.getQuotes(rfq, useBatchId);
       } else if (classification.quoting === 'project44-dual' && this.project44Client) {
         console.log(`📦 Getting dual quotes (Volume LTL + Standard LTL) for RFQ ${rowIndex + 1}`);
         
         // Get both Volume LTL and Standard LTL quotes
         const [volumeQuotes, standardQuotes] = await Promise.all([
-          this.project44Client.getQuotes(rfq, selectedCarrierIds, true, false, false),  // Volume LTL
-          this.project44Client.getQuotes(rfq, selectedCarrierIds, false, false, false)  // Standard LTL
+          this.project44Client.getQuotes(rfq, selectedCarrierIds, true, false, false, useBatchId),  // Volume LTL
+          this.project44Client.getQuotes(rfq, selectedCarrierIds, false, false, false, useBatchId)  // Standard LTL
         ]);
         
         // Tag quotes with their mode for identification
@@ -105,7 +164,7 @@ export class RFQProcessor {
         console.log(`✅ Dual quoting completed: ${volumeQuotes.length} Volume LTL + ${standardQuotes.length} Standard LTL quotes`);
       } else if (this.project44Client) {
         console.log(`🚛 Getting Standard LTL quotes for RFQ ${rowIndex + 1}`);
-        quotes = await this.project44Client.getQuotes(rfq, selectedCarrierIds, false, false, false);
+        quotes = await this.project44Client.getQuotes(rfq, selectedCarrierIds, false, false, false, useBatchId);
       }
       
       if (quotes.length > 0) {
@@ -144,7 +203,22 @@ export class RFQProcessor {
 
     console.log(`🧠 Starting Smart Quoting RFQ processing: ${rfqs.length} RFQs`);
 
+    // Create a batch for this processing session
+    let batchId: string | null = null;
+    if (options.batchName) {
+      try {
+        batchId = await this.createBatch(options.batchName, options);
+        console.log(`✅ Created batch: ${batchId} for ${rfqs.length} RFQs`);
+      } catch (error) {
+        console.warn('⚠️ Failed to create batch, continuing without database tracking:', error);
+      }
+    }
+
     const allResults: SmartQuotingResult[] = [];
+    let successfulRfqs = 0;
+    let totalQuotes = 0;
+    let bestPrice = Infinity;
+    let totalProfit = 0;
 
     for (let i = 0; i < rfqs.length; i++) {
       const rfq = rfqs[i];
@@ -155,11 +229,43 @@ export class RFQProcessor {
         options.onProgress(i + 1, rfqs.length, `RFQ ${i + 1}: ${classification.quoting.toUpperCase()}`);
       }
 
-      const result = await this.processSingleRFQ(rfq, options, i);
+      const result = await this.processSingleRFQ(rfq, options, i, batchId);
       allResults.push(result);
+      
+      // Update statistics
+      if (result.status === 'success') {
+        successfulRfqs++;
+        totalQuotes += result.quotes.length;
+        
+        // Calculate best price and total profit
+        result.quotes.forEach(quote => {
+          if (quote.customerPrice && quote.customerPrice < bestPrice) {
+            bestPrice = quote.customerPrice;
+          }
+          if (quote.profit) {
+            totalProfit += quote.profit;
+          }
+        });
+      }
 
       // Small delay between requests
       await new Promise(resolve => setTimeout(resolve, 100));
+    }
+
+    // Update batch statistics
+    if (batchId && this.project44Client) {
+      try {
+        await this.updateBatchStats(batchId, {
+          total_rfqs: rfqs.length,
+          successful_rfqs: successfulRfqs,
+          total_quotes: totalQuotes,
+          best_total_price: bestPrice === Infinity ? 0 : bestPrice,
+          total_profit: totalProfit
+        });
+        console.log(`✅ Updated batch statistics: ${successfulRfqs}/${rfqs.length} successful, ${totalQuotes} total quotes`);
+      } catch (error) {
+        console.warn('⚠️ Failed to update batch statistics:', error);
+      }
     }
 
     console.log(`🏁 Smart Quoting processing completed: ${allResults.length} total results`);
@@ -170,7 +276,8 @@ export class RFQProcessor {
   async processRFQsForAccountGroup(
     rfqs: RFQRow[],
     accountGroupCode: string,
-    options: Omit<RFQProcessingOptions, 'selectedCarriers'>
+    options: Omit<RFQProcessingOptions, 'selectedCarriers'>,
+    batchId?: string
   ): Promise<SmartQuotingResult[]> {
     if (!this.project44Client) {
       throw new Error('Project44 client not available');
@@ -178,6 +285,7 @@ export class RFQProcessor {
 
     console.log(`🧠 Processing RFQs for account group: ${accountGroupCode}`);
 
+    const useBatchId = batchId || this.currentBatchId;
     const allResults: SmartQuotingResult[] = [];
 
     for (let i = 0; i < rfqs.length; i++) {
@@ -204,12 +312,12 @@ export class RFQProcessor {
         let quotes: any[] = [];
 
         if (classification.quoting === 'freshx' && this.freshxClient) {
-          quotes = await this.freshxClient.getQuotes(rfq);
+          quotes = await this.freshxClient.getQuotes(rfq, useBatchId);
         } else if (classification.quoting === 'project44-dual') {
           // Get both Volume LTL and Standard LTL quotes for account group
           const [volumeQuotes, standardQuotes] = await Promise.all([
-            this.project44Client.getQuotesForAccountGroup(rfq, accountGroupCode, true, false, false),
-            this.project44Client.getQuotesForAccountGroup(rfq, accountGroupCode, false, false, false)
+            this.project44Client.getQuotesForAccountGroup(rfq, accountGroupCode, true, false, false, useBatchId),
+            this.project44Client.getQuotesForAccountGroup(rfq, accountGroupCode, false, false, false, useBatchId)
           ]);
           
           const taggedVolumeQuotes = volumeQuotes.map(quote => ({
@@ -226,7 +334,7 @@ export class RFQProcessor {
           
           quotes = [...taggedVolumeQuotes, ...taggedStandardQuotes];
         } else {
-          quotes = await this.project44Client.getQuotesForAccountGroup(rfq, accountGroupCode, false, false, false);
+          quotes = await this.project44Client.getQuotesForAccountGroup(rfq, accountGroupCode, false, false, false, useBatchId);
         }
         
         if (quotes.length > 0) {

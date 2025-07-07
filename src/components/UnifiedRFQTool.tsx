@@ -149,39 +149,11 @@ export const UnifiedRFQTool: React.FC<UnifiedRFQToolProps> = ({
   const [showPastRFQSelector, setShowPastRFQSelector] = useState(false);
   const [currentBatchId, setCurrentBatchId] = useState<string | null>(null);
   const [lastSavedBatchName, setLastSavedBatchName] = useState<string>('');
-  const [showSaveSuccess, setShowSaveSuccess] = useState(false);
-  
-  // Local state for pricing settings and customer selection
-  const [pricingSettings, setPricingSettings] = useState<PricingSettings>(initialPricingSettings);
-  const [selectedCustomer, setSelectedCustomer] = useState<string>(initialSelectedCustomer || '');
-  
-  const updatePricingSettings = (newSettings: PricingSettings) => {
-    setPricingSettings(newSettings);
-  };
-  
-  const updateSelectedCustomer = (customer: string) => {
-    setSelectedCustomer(customer);
-  };
-  
-  const carrierManagement = useCarrierManagement({ project44Client });
-  
-  const rfqProcessor = useRFQProcessor({ 
-    project44Client, 
-    freshxClient 
-  });
-  
-  // Single carrier selection (for single carrier mode)
-  const [selectedSingleCarrier, setSelectedSingleCarrier] = useState<string>('');
-  
-  // Customer selection for specific customer mode
-  const [specificCustomers, setSpecificCustomers] = useState<string[]>([]);
-  
-  // Load historical data
-  useEffect(() => {
     if (inputSource === 'history') {
       loadHistoricalShipments();
     } else if (inputSource === 'past-rfq') {
-      loadPastRFQBatches();
+      // Past RFQ Batch mode now uses the same selector as Load from Past RFQ
+      setShowPastRFQSelector(true);
     }
   }, [inputSource, customerFilter, dateRangeFilter, carrierFilter]);
   
@@ -499,26 +471,11 @@ export const UnifiedRFQTool: React.FC<UnifiedRFQToolProps> = ({
         console.log('✅ Updated existing RFQ batch:', currentBatchId);
       } else {
         // Save new batch
-        const batchId = await saveRFQBatch(
-          batchName,
-          rfqData,
-          results,
-          pricingSettings,
-          carrierManagement.selectedCarriers,
-          selectedCustomer,
-          'smart'
-        );
-        setCurrentBatchId(batchId);
-        console.log('✅ Saved new RFQ batch:', batchId);
-      }
-      
-      setLastSavedBatchName(batchName);
-      setShowSaveSuccess(true);
-      setTimeout(() => setShowSaveSuccess(false), 3000);
-    } catch (error) {
-      console.error('❌ Failed to save results to database:', error);
-      // Don't throw error - processing was successful, just saving failed
-    }
+  const handlePastRFQBatchSelect = async (batchId: string) => {
+    // Use the same logic as Load from Past RFQ
+    await handleLoadPastRFQ(batchId);
+    // Switch back to file upload mode after loading
+    setMode('fileUpload');
   };
 
   const handleSelectPastRFQ = async (batchId: string) => {
@@ -603,7 +560,7 @@ export const UnifiedRFQTool: React.FC<UnifiedRFQToolProps> = ({
         created_by: 'unified_rfq_tool'
       };
 
-      await saveRFQBatch(batch);
+      const handleLoadPastRFQ = async (batchId: string) => {
       setSaveSuccess(true);
       setTimeout(() => setSaveSuccess(false), 3000);
     } catch (error) {
@@ -1459,41 +1416,6 @@ export const UnifiedRFQTool: React.FC<UnifiedRFQToolProps> = ({
             </div>
           )}
         </div>
-      );
-    } else {
-      // Multiple carrier selection
-      return (
-        <div className="bg-white rounded-lg shadow-md overflow-hidden">
-          <div className="px-6 py-4 border-b border-gray-200">
-            <h3 className="text-lg font-semibold text-gray-900">Select Multiple Carriers</h3>
-          </div>
-          
-          <div className="p-6">
-            {!carrierManagement.carriersLoaded && !carrierManagement.isLoadingCarriers && (
-              <button
-                onClick={carrierManagement.loadCarriers}
-                className="w-full flex items-center justify-center space-x-2 px-4 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-              >
-                <Truck className="h-5 w-5" />
-                <span>Load Carrier Network</span>
-              </button>
-            )}
-            
-            {(carrierManagement.carriersLoaded || carrierManagement.isLoadingCarriers) && (
-              <CarrierSelection
-                carrierGroups={carrierManagement.carrierGroups}
-                selectedCarriers={carrierManagement.selectedCarriers}
-                onToggleCarrier={carrierManagement.handleCarrierToggle}
-                onSelectAll={carrierManagement.handleSelectAll}
-                onSelectAllInGroup={carrierManagement.handleSelectAllInGroup}
-                isLoading={carrierManagement.isLoadingCarriers}
-              />
-            )}
-          </div>
-        </div>
-      );
-    }
-  };
   
   // Render customer selection
   const renderCustomerSelection = () => {

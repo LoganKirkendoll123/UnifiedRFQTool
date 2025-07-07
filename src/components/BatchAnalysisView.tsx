@@ -81,15 +81,49 @@ export const BatchAnalysisView: React.FC<BatchAnalysisViewProps> = ({
     let profit = response.profit || 0;
     let transitDays = response.transit_days || undefined;
     
+    // Debug logging to see what's in the raw response
+    if (response.raw_response) {
+      console.log('🔍 Raw response structure for transit days:', {
+        transitDays: response.raw_response.transitDays,
+        transitDaysRange: response.raw_response.transitDaysRange,
+        serviceLevel: response.raw_response.serviceLevel,
+        fullResponse: response.raw_response
+      });
+    }
+    
     if (response.raw_response) {
       // Extract from Project44 raw response if database values are missing
       if (response.raw_response.rateQuoteDetail?.total && carrierTotalRate <= 0) {
         carrierTotalRate = response.raw_response.rateQuoteDetail.total;
       }
       
-      // Extract transit days from raw response if not in database
-      if (!transitDays && response.raw_response.transitDays) {
+      // Extract transit days from raw response if not in database - try multiple possible locations
+      if (!transitDays) {
+        // Try direct transitDays field
         transitDays = response.raw_response.transitDays;
+        
+        // Try transitDaysRange if available
+        if (!transitDays && response.raw_response.transitDaysRange) {
+          const range = response.raw_response.transitDaysRange;
+          if (range.min !== undefined) {
+            transitDays = range.min; // Use minimum transit days
+          }
+        }
+        
+        // Try nested in service level or other locations
+        if (!transitDays && response.raw_response.serviceLevel?.transitDays) {
+          transitDays = response.raw_response.serviceLevel.transitDays;
+        }
+        
+        // Try alternate quote locations
+        if (!transitDays && response.raw_response.alternateRateQuotes?.length > 0) {
+          const firstAlternate = response.raw_response.alternateRateQuotes[0];
+          if (firstAlternate.transitDays) {
+            transitDays = firstAlternate.transitDays;
+          }
+        }
+        
+        console.log('🚛 Extracted transit days:', transitDays);
       }
       
       // Calculate customer price if not available

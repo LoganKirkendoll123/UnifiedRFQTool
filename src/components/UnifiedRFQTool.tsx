@@ -581,7 +581,7 @@ export const UnifiedRFQTool: React.FC<UnifiedRFQToolProps> = ({
     setSaveSuccess(false);
 
     try {
-      const batchName = `${activeMode.charAt(0).toUpperCase() + activeMode.slice(1)} RFQ Batch - ${new Date().toLocaleDateString()}`;
+      const batchName = `Smart RFQ Batch - ${new Date().toLocaleDateString()}`;
       const summary = calculateBatchSummary(rfqProcessor.results);
       
       const batch = {

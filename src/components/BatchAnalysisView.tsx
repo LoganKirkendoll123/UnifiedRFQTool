@@ -76,51 +76,66 @@ export const BatchAnalysisView: React.FC<BatchAnalysisViewProps> = ({
 
   // Convert BatchResponse to QuoteWithPricing format for CarrierCards
   const convertBatchResponseToQuote = (response: BatchResponse): QuoteWithPricing => {
-    // Extract request info for proper display
     const relatedRequest = requests.find(r => r.id === response.request_id);
     
-    // Debug logging to see what we're getting from the database
-    console.log('🔍 Converting BatchResponse to Quote:', {
-      quote_id: response.quote_id,
-      carrier_name: response.carrier_name,
-      carrier_total_rate: response.carrier_total_rate,
-      customer_price: response.customer_price,
-      profit: response.profit,
-      markup_applied: response.markup_applied,
-      raw_response_keys: response.raw_response ? Object.keys(response.raw_response) : 'no raw_response'
-    });
+    // Extract pricing from raw_response if available, fallback to database fields
+    let carrierTotalRate = response.carrier_total_rate || 0;
+    let customerPrice = response.customer_price || 0;
+    let profit = response.profit || 0;
+    let baseRate = 0;
+    let fuelSurcharge = 0;
+    let premiumsAndDiscounts = 0;
     
-    // Check if we have valid pricing from the database fields
-    const hasValidDirectPricing = response.carrier_total_rate > 0 && response.customer_price > 0;
-    
-    // If direct pricing is missing, try to extract from raw_response
-    let carrierTotalRate = response.carrier_total_rate;
-    let customerPrice = response.customer_price;
-    let profit = response.profit;
-    
-    if (!hasValidDirectPricing && response.raw_response) {
-      // Try to extract pricing from raw Project44 response
-      if (response.raw_response.rateQuoteDetail?.total) {
+    if (response.raw_response) {
+      // Extract from Project44 raw response
+      if (response.raw_response.rateQuoteDetail?.total && carrierTotalRate <= 0) {
         carrierTotalRate = response.raw_response.rateQuoteDetail.total;
-        console.log('📊 Using raw response total:', carrierTotalRate);
       }
       
-      // For customer price, use carrier rate + typical margin if not available
-      if (carrierTotalRate > 0 && customerPrice <= 0) {
-        customerPrice = carrierTotalRate * 1.2; // Assume 20% margin as fallback
+      // Extract individual charges for better display
+      if (response.raw_response.rateQuoteDetail?.charges) {
+        const charges = response.raw_response.rateQuoteDetail.charges;
+        
+        charges.forEach((charge: any) => {
+          const amount = charge.amount || 0;
+          const code = charge.code || '';
+          
+          if (code.includes('BASE') || code.includes('LINE')) {
+            baseRate += amount;
+          } else if (code.includes('FUEL')) {
+            fuelSurcharge += amount;
+          } else {
+            premiumsAndDiscounts += amount;
+          }
+        });
+        
+        // If we didn't categorize everything, put remainder in premiums
+        const totalCategorized = baseRate + fuelSurcharge + premiumsAndDiscounts;
+        if (totalCategorized < carrierTotalRate) {
+          premiumsAndDiscounts += (carrierTotalRate - totalCategorized);
+        }
+      } else {
+        // Fallback distribution if no detailed charges
+        baseRate = carrierTotalRate * 0.7;
+        fuelSurcharge = carrierTotalRate * 0.2;
+        premiumsAndDiscounts = carrierTotalRate * 0.1;
+      }
+      
+      // Calculate customer price if not available
+      if (customerPrice <= 0 && carrierTotalRate > 0) {
+        // Use applied margin percentage if available, otherwise 20% default
+        const marginPercent = response.applied_margin_percentage || 20;
+        customerPrice = carrierTotalRate / (1 - marginPercent / 100);
         profit = customerPrice - carrierTotalRate;
-        console.log('💰 Calculated customer price from carrier rate:', customerPrice);
       }
     }
     
-    const hasValidPricing = carrierTotalRate > 0 && customerPrice > 0;
-    
     return {
       quoteId: parseInt(response.quote_id) || 0,
-      baseRate: hasValidPricing ? carrierTotalRate * 0.7 : 0,
-      fuelSurcharge: hasValidPricing ? carrierTotalRate * 0.2 : 0,
+      baseRate,
+      fuelSurcharge,
       accessorial: response.raw_response?.accessorialServices || [],
-      premiumsAndDiscounts: hasValidPricing ? carrierTotalRate * 0.1 : 0,
+      premiumsAndDiscounts,
       readyByDate: new Date(response.created_at || '').toLocaleDateString(),
       estimatedDeliveryDate: response.transit_days ? 
         new Date(Date.now() + response.transit_days * 24 * 60 * 60 * 1000).toLocaleDateString() : '',
@@ -146,40 +161,39 @@ export const BatchAnalysisView: React.FC<BatchAnalysisViewProps> = ({
         scac: response.carrier_scac || response.carrier_code || '',
         dotNumber: '' // Not stored in database
       },
-      // Use the validated/calculated pricing values
-      carrierTotalRate: carrierTotalRate,
-      customerPrice: customerPrice,
-      profit: profit,
+      carrierTotalRate,
+      customerPrice,
+      profit,
       markupApplied: response.markup_applied || (customerPrice - carrierTotalRate),
       isCustomPrice: response.is_custom_price || false,
       appliedMarginType: response.applied_margin_type as any,
       appliedMarginPercentage: response.applied_margin_percentage || 0,
       chargeBreakdown: {
-        baseCharges: hasValidPricing ? [{
-          amount: carrierTotalRate * 0.7,
+        baseCharges: baseRate > 0 ? [{
+          amount: baseRate,
           code: 'BASE',
-          description: 'Base Rate (estimated)'
+          description: 'Base Rate'
         }] : [],
-        fuelCharges: hasValidPricing ? [{
-          amount: carrierTotalRate * 0.2,
+        fuelCharges: fuelSurcharge > 0 ? [{
+          amount: fuelSurcharge,
           code: 'FUEL',
-          description: 'Fuel Surcharge (estimated)'
+          description: 'Fuel Surcharge'
         }] : [],
-        accessorialCharges: response.raw_response?.charges?.filter((c: any) => 
+        accessorialCharges: response.raw_response?.rateQuoteDetail?.charges?.filter((c: any) => 
           c.code && !['BASE', 'FUEL'].includes(c.code)
         ) || [],
         discountCharges: [],
-        premiumCharges: hasValidPricing && carrierTotalRate * 0.1 > 0 ? [{
-          amount: carrierTotalRate * 0.1,
+        premiumCharges: premiumsAndDiscounts > 0 ? [{
+          amount: premiumsAndDiscounts,
           code: 'PREMIUM',
-          description: 'Premiums & Adjustments (estimated)'
+          description: 'Premiums & Adjustments'
         }] : [],
-        otherCharges: response.raw_response?.charges || []
+        otherCharges: response.raw_response?.rateQuoteDetail?.charges || []
       },
       // Project44 specific fields
       capacityProviderIdentifier: undefined,
       rateQuoteDetail: {
-        charges: response.raw_response?.charges || [],
+        charges: response.raw_response?.rateQuoteDetail?.charges || [],
         subtotal: carrierTotalRate,
         total: carrierTotalRate
       },

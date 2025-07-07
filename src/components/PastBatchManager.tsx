@@ -62,6 +62,7 @@ export const PastBatchManager: React.FC<PastBatchManagerProps> = ({
   const [loadingAnalyses, setLoadingAnalyses] = useState(false);
   const [currentProgress, setCurrentProgress] = useState({ current: 0, total: 0, item: '' });
   const [carrierNames, setCarrierNames] = useState<{ [carrierId: string]: string }>({});
+  const [showAnalytics, setShowAnalytics] = useState(false);
 
   useEffect(() => {
     loadBatches();

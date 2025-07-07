@@ -71,7 +71,6 @@ export const BatchAnalysisView: React.FC<BatchAnalysisViewProps> = ({
   onBack
 }) => {
   const [expandedShipments, setExpandedShipments] = useState<Set<string>>(new Set());
-  const [analysisMode, setAnalysisMode] = useState<'overview' | 'detailed' | 'recommendations'>('overview');
   const [shipmentAnalyses, setShipmentAnalyses] = useState<ShipmentAnalysis[]>([]);
 
   // Helper function to extract pricing from BatchResponse (including from raw_response)
@@ -497,7 +496,7 @@ export const BatchAnalysisView: React.FC<BatchAnalysisViewProps> = ({
     <div className="space-y-6">
       {/* Header */}
       <div className="bg-white rounded-lg shadow-md p-6">
-        <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center justify-between">
           <div className="flex items-center space-x-4">
             <button
               onClick={onBack}
@@ -518,44 +517,10 @@ export const BatchAnalysisView: React.FC<BatchAnalysisViewProps> = ({
               </p>
             </div>
           </div>
-
-          {/* Analysis Mode Toggle */}
-          <div className="flex items-center space-x-1 bg-gray-100 rounded-lg p-1">
-            <button
-              onClick={() => setAnalysisMode('overview')}
-              className={`px-3 py-1 text-sm rounded-md transition-colors ${
-                analysisMode === 'overview' 
-                  ? 'bg-white text-blue-600 shadow-sm' 
-                  : 'text-gray-600 hover:text-gray-900'
-              }`}
-            >
-              Overview
-            </button>
-            <button
-              onClick={() => setAnalysisMode('detailed')}
-              className={`px-3 py-1 text-sm rounded-md transition-colors ${
-                analysisMode === 'detailed' 
-                  ? 'bg-white text-blue-600 shadow-sm' 
-                  : 'text-gray-600 hover:text-gray-900'
-              }`}
-            >
-              Detailed
-            </button>
-            <button
-              onClick={() => setAnalysisMode('recommendations')}
-              className={`px-3 py-1 text-sm rounded-md transition-colors ${
-                analysisMode === 'recommendations' 
-                  ? 'bg-white text-blue-600 shadow-sm' 
-                  : 'text-gray-600 hover:text-gray-900'
-              }`}
-            >
-              Recommendations
-            </button>
-          </div>
         </div>
 
         {/* Batch Summary Stats */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-6">
           <div className="bg-blue-50 rounded-lg p-3">
             <div className="text-2xl font-bold text-blue-600">{batch.total_rfqs}</div>
             <div className="text-sm text-blue-700">Total RFQs</div>
@@ -577,6 +542,32 @@ export const BatchAnalysisView: React.FC<BatchAnalysisViewProps> = ({
             <div className="text-sm text-orange-700">Total Profit</div>
           </div>
         </div>
+
+        {/* Customer Margin Comparison Summary - Only show if comparing */}
+        {newResponses && newResponses.length > 0 && (
+          <div className="mt-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+            <h3 className="text-lg font-semibold text-blue-900 mb-3">Margin Analysis Summary</h3>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="text-center">
+                <div className="text-2xl font-bold text-green-600">{overallStats.betterPricingCount}</div>
+                <div className="text-sm text-gray-600">Better Pricing</div>
+                <div className="text-xs text-gray-500">Lower cost than original</div>
+              </div>
+              <div className="text-center">
+                <div className="text-2xl font-bold text-red-600">{overallStats.worsePricingCount}</div>
+                <div className="text-sm text-gray-600">Higher Pricing</div>
+                <div className="text-xs text-gray-500">Higher cost than original</div>
+              </div>
+              <div className="text-center">
+                <div className={`text-2xl font-bold ${getChangeColor(overallStats.avgPriceChange)}`}>
+                  {overallStats.avgPriceChange > 0 ? '+' : ''}{overallStats.avgPriceChange.toFixed(1)}%
+                </div>
+                <div className="text-sm text-gray-600">Avg Price Change</div>
+                <div className="text-xs text-gray-500">Overall impact</div>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* RFQ Cards with Analysis */}
@@ -679,7 +670,8 @@ export const BatchAnalysisView: React.FC<BatchAnalysisViewProps> = ({
               {/* Expanded Details */}
               {isExpanded && (
                 <div className="p-6">
-                  {analysisMode === 'overview' && (
+                  {/* Show comparison stats if comparing */}
+                  {analysis.newQuotes && analysis.newQuotes.length > 0 && (
                     <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
                       <div className="bg-blue-50 rounded-lg p-3">
                         <div className="text-sm text-blue-600 mb-1">Original Best Price</div>
@@ -687,13 +679,11 @@ export const BatchAnalysisView: React.FC<BatchAnalysisViewProps> = ({
                         <div className="text-xs text-blue-700">{analysis.originalQuotes.length} quotes</div>
                       </div>
                       
-                      {analysis.newBestPrice !== undefined && (
-                        <div className="bg-green-50 rounded-lg p-3">
-                          <div className="text-sm text-green-600 mb-1">New Best Price</div>
-                          <div className="text-lg font-bold text-green-900">{formatCurrency(analysis.newBestPrice)}</div>
-                          <div className="text-xs text-green-700">{analysis.newQuotes?.length || 0} quotes</div>
-                        </div>
-                      )}
+                      <div className="bg-green-50 rounded-lg p-3">
+                        <div className="text-sm text-green-600 mb-1">New Best Price</div>
+                        <div className="text-lg font-bold text-green-900">{formatCurrency(analysis.newBestPrice!)}</div>
+                        <div className="text-xs text-green-700">{analysis.newQuotes.length} quotes</div>
+                      </div>
                       
                       {analysis.costDifference !== undefined && (
                         <div className={`rounded-lg p-3 ${analysis.costDifference < 0 ? 'bg-green-50' : analysis.costDifference > 0 ? 'bg-red-50' : 'bg-gray-50'}`}>
@@ -711,24 +701,16 @@ export const BatchAnalysisView: React.FC<BatchAnalysisViewProps> = ({
                       )}
                       
                       <div className="bg-purple-50 rounded-lg p-3">
-                        <div className="text-sm text-purple-600 mb-1">Margin Opportunity</div>
-                        <div className="text-lg font-bold text-purple-900">
-                          {analysis.marginRecommendations.toMaximizeProfit.toFixed(1)}%
+                        <div className="text-sm text-purple-600 mb-1">Margin Impact</div>
+                        <div className={`text-lg font-bold ${getTrendColor(analysis.marginRecommendations.revenueImpact, false)}`}>
+                          {analysis.marginRecommendations.revenueImpact > 0 ? '+' : ''}{formatCurrency(analysis.marginRecommendations.revenueImpact)}
                         </div>
                         <div className="text-xs text-purple-700">
-                          {analysis.costDifference !== undefined && analysis.costDifference < 0 ? 'Savings available' : 'Standard margin'}
+                          Revenue impact per shipment
                         </div>
                       </div>
                     </div>
                   )}
-
-                  {(analysisMode === 'detailed' || analysisMode === 'overview') && analysis.newQuotes && (
-                    <>
-                      {renderAccessorialComparison(analysis)}
-                    </>
-                  )}
-                  
-                  {analysisMode === 'recommendations' && renderMarginRecommendations(analysis)}
                   
                   {/* Carrier Cards */}
                   <div className="space-y-6">

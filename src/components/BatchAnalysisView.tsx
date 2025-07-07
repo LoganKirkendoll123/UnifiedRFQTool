@@ -76,35 +76,39 @@ export const BatchAnalysisView: React.FC<BatchAnalysisViewProps> = ({
 
   // Convert BatchResponse to QuoteWithPricing format for CarrierCards
   const convertBatchResponseToQuote = (response: BatchResponse): QuoteWithPricing => {
+    // Extract request info for proper display
+    const relatedRequest = requests.find(r => r.id === response.request_id);
+    
     return {
       quoteId: parseInt(response.quote_id) || 0,
-      baseRate: 0, // Not stored separately in BatchResponse
-      fuelSurcharge: 0, // Not stored separately in BatchResponse
-      accessorial: [], // Would need to parse from raw_response
-      premiumsAndDiscounts: response.carrier_total_rate, // Use carrier total as premiums
+      baseRate: response.carrier_total_rate * 0.7, // Estimate base as 70% of total
+      fuelSurcharge: response.carrier_total_rate * 0.2, // Estimate fuel as 20% of total
+      accessorial: response.raw_response?.accessorialServices || [],
+      premiumsAndDiscounts: response.carrier_total_rate * 0.1, // Estimate premiums as 10% of total
       readyByDate: new Date(response.created_at || '').toLocaleDateString(),
-      estimatedDeliveryDate: '',
-      weight: 0, // Not available in response
-      pallets: 0, // Not available in response
-      stackable: false,
+      estimatedDeliveryDate: response.transit_days ? 
+        new Date(Date.now() + response.transit_days * 24 * 60 * 60 * 1000).toLocaleDateString() : '',
+      weight: relatedRequest?.gross_weight || 0,
+      pallets: relatedRequest?.pallets || 0,
+      stackable: false, // Not stored in database
       pickup: {
-        city: '',
+        city: '',  // Would need to be parsed from request
         state: '',
-        zip: ''
+        zip: relatedRequest?.from_zip || ''
       },
       dropoff: {
-        city: '',
+        city: '',  // Would need to be parsed from request
         state: '',
-        zip: ''
+        zip: relatedRequest?.to_zip || ''
       },
       submittedBy: 'Database',
       submissionDatetime: response.created_at || '',
       carrier: {
         name: response.carrier_name,
-        mcNumber: '',
+        mcNumber: '', // Not stored in database
         logo: '',
         scac: response.carrier_scac || response.carrier_code || '',
-        dotNumber: ''
+        dotNumber: '' // Not stored in database
       },
       carrierTotalRate: response.carrier_total_rate,
       customerPrice: response.customer_price,
@@ -114,17 +118,31 @@ export const BatchAnalysisView: React.FC<BatchAnalysisViewProps> = ({
       appliedMarginType: response.applied_margin_type as any,
       appliedMarginPercentage: response.applied_margin_percentage || 0,
       chargeBreakdown: {
-        baseCharges: [],
-        fuelCharges: [],
-        accessorialCharges: [],
+        baseCharges: [{
+          amount: response.carrier_total_rate * 0.7,
+          code: 'BASE',
+          description: 'Base Rate (estimated)'
+        }],
+        fuelCharges: [{
+          amount: response.carrier_total_rate * 0.2,
+          code: 'FUEL',
+          description: 'Fuel Surcharge (estimated)'
+        }],
+        accessorialCharges: response.raw_response?.charges?.filter((c: any) => 
+          c.code && !['BASE', 'FUEL'].includes(c.code)
+        ) || [],
         discountCharges: [],
-        premiumCharges: [],
-        otherCharges: []
+        premiumCharges: response.carrier_total_rate * 0.1 > 0 ? [{
+          amount: response.carrier_total_rate * 0.1,
+          code: 'PREMIUM',
+          description: 'Premiums & Adjustments (estimated)'
+        }] : [],
+        otherCharges: response.raw_response?.charges || []
       },
       // Project44 specific fields
       capacityProviderIdentifier: undefined,
       rateQuoteDetail: {
-        charges: [],
+        charges: response.raw_response?.charges || [],
         subtotal: response.carrier_total_rate,
         total: response.carrier_total_rate
       },

@@ -25,6 +25,7 @@ import {
 import { BatchData, BatchRequest, BatchResponse } from '../utils/apiClient';
 import { formatCurrency } from '../utils/pricingCalculator';
 import { CarrierCards } from './CarrierCards';
+import { Project44APIClient } from '../utils/apiClient';
 
 interface BatchAnalysisViewProps {
   batch: BatchData;
@@ -347,7 +348,7 @@ export const BatchAnalysisView: React.FC<BatchAnalysisViewProps> = ({
               className="flex items-center space-x-2 text-gray-600 hover:text-gray-900 transition-colors"
             >
               <ArrowLeft className="h-5 w-5" />
-              <span>Back to Batches</span>
+                      quotes={analysis.newQuotes.map(Project44APIClient.convertBatchResponseToQuoteWithPricing)}
             </button>
             <div className="h-6 w-px bg-gray-300"></div>
             <div>

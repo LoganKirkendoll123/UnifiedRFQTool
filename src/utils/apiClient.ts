@@ -159,6 +159,80 @@ export class Project44APIClient {
   private carrierGroups: CarrierGroup[] = []; // Store carrier groups for lookup
   private currentBatchId: string | null = null;
 
+  // Utility function to convert BatchResponse to QuoteWithPricing format
+  static convertBatchResponseToQuoteWithPricing(batchResponse: BatchResponse): import('../types').QuoteWithPricing {
+    // Extract carrier information from the raw response if available
+    const rawResponse = batchResponse.raw_response || {};
+    
+    return {
+      quoteId: parseInt(batchResponse.quote_id) || 0,
+      baseRate: 0, // Will be calculated from charge breakdown if available
+      fuelSurcharge: 0, // Will be calculated from charge breakdown if available
+      accessorial: [], // Will be populated from charge breakdown if available
+      premiumsAndDiscounts: 0,
+      readyByDate: rawResponse.readyByDate || '',
+      estimatedDeliveryDate: rawResponse.estimatedDeliveryDate || rawResponse.deliveryDateTime || '',
+      temperature: rawResponse.temperature,
+      weight: rawResponse.weight || 0,
+      pallets: rawResponse.pallets || 0,
+      commodity: rawResponse.commodity,
+      stackable: rawResponse.stackable || false,
+      foodGrade: rawResponse.foodGrade,
+      pickup: rawResponse.pickup || {
+        city: '',
+        state: '',
+        zip: ''
+      },
+      dropoff: rawResponse.dropoff || {
+        city: '',
+        state: '',
+        zip: ''
+      },
+      submittedBy: rawResponse.submittedBy || 'System',
+      submissionDatetime: batchResponse.created_at,
+      carrier: {
+        name: batchResponse.carrier_name,
+        mcNumber: '',
+        logo: '',
+        scac: batchResponse.carrier_scac,
+        dotNumber: ''
+      },
+      // Project44 specific fields from raw response
+      capacityProviderIdentifier: rawResponse.capacityProviderIdentifier,
+      rateQuoteDetail: rawResponse.rateQuoteDetail || batchResponse.charge_breakdown,
+      serviceLevel: rawResponse.serviceLevel || {
+        code: batchResponse.service_level_code || '',
+        description: batchResponse.service_level_description || ''
+      },
+      transitDays: batchResponse.transit_days,
+      transitDaysRange: rawResponse.transitDaysRange,
+      carrierCode: batchResponse.carrier_code,
+      contractId: rawResponse.contractId,
+      currencyCode: rawResponse.currencyCode,
+      laneType: rawResponse.laneType,
+      quoteEffectiveDateTime: rawResponse.quoteEffectiveDateTime,
+      quoteExpirationDateTime: rawResponse.quoteExpirationDateTime,
+      deliveryDateTime: rawResponse.deliveryDateTime,
+      id: rawResponse.id || batchResponse.id,
+      // QuoteWithPricing specific fields
+      carrierTotalRate: batchResponse.carrier_total_rate,
+      customerPrice: batchResponse.customer_price,
+      profit: batchResponse.profit,
+      markupApplied: batchResponse.markup_applied,
+      isCustomPrice: batchResponse.is_custom_price,
+      appliedMarginType: batchResponse.applied_margin_type as any,
+      appliedMarginPercentage: batchResponse.applied_margin_percentage,
+      chargeBreakdown: batchResponse.charge_breakdown || {
+        baseCharges: [],
+        fuelCharges: [],
+        accessorialCharges: [],
+        discountCharges: [],
+        premiumCharges: [],
+        otherCharges: []
+      }
+    };
+  }
+
   // Add a public method to get the access token for testing connection
   public async getAccessToken(): Promise<string> {
     return this._getAccessToken();

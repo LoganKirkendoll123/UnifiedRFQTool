@@ -169,6 +169,16 @@ export const DetailedBatchResults: React.FC<DetailedBatchResultsProps> = ({
     }
   };
 
+  const getStatusColor = (analysis: ShipmentAnalysis) => {
+    if (analysis.newQuotes && analysis.newQuotes.length > 0) {
+      return 'border-green-200 bg-green-50';
+    } else if (analysis.originalQuotes.length > 0) {
+      return 'border-blue-200 bg-blue-50';
+    } else {
+      return 'border-gray-200 bg-gray-50';
+    }
+  };
+
   const renderShipmentOverview = (analysis: ShipmentAnalysis) => (
     <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
       <div className="bg-blue-50 rounded-lg p-3">
@@ -514,10 +524,10 @@ export const DetailedBatchResults: React.FC<DetailedBatchResultsProps> = ({
           const isExpanded = expandedShipments.has(analysis.request.id);
           
           return (
-            <div key={analysis.request.id} className="bg-white rounded-lg shadow-md overflow-hidden">
-              {/* Shipment Header */}
+            <div key={analysis.request.id} className={`bg-white rounded-lg shadow-md border overflow-hidden ${getStatusColor(analysis)}`}>
+              {/* Shipment Header - RFQ Card Style */}
               <div 
-                className="p-4 border-b border-gray-200 cursor-pointer hover:bg-gray-50 transition-colors"
+                className="p-6 border-b border-gray-200 cursor-pointer hover:bg-gray-50 transition-colors"
                 onClick={() => toggleShipment(analysis.request.id)}
               >
                 <div className="flex items-center justify-between">

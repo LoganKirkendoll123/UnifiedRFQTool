@@ -268,19 +268,10 @@ export const UnifiedRFQTool: React.FC<UnifiedRFQToolProps> = ({
   
   const loadPastRFQData = async (batchId: string) => {
     try {
-      const { data, error } = await supabase
-        .from('rfq_batches')
-        .select('rfq_data')
-        .eq('id', batchId)
-        .single();
+      const batch = await loadRFQBatch(batchId);
       
-      if (error) {
-        console.error('Error loading past RFQ data:', error);
-        return;
-      }
-      
-      if (data && data.rfq_data) {
-        setPastRFQData(data.rfq_data);
+      if (batch && batch.rfq_data) {
+        setPastRFQData(batch.rfq_data);
       }
     } catch (error) {
       console.error('Failed to load past RFQ data:', error);

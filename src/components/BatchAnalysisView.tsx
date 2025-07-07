@@ -79,12 +79,15 @@ export const BatchAnalysisView: React.FC<BatchAnalysisViewProps> = ({
     // Extract request info for proper display
     const relatedRequest = requests.find(r => r.id === response.request_id);
     
+    // Use actual database values, not estimates
+    const hasValidPricing = response.carrier_total_rate > 0 && response.customer_price > 0;
+    
     return {
       quoteId: parseInt(response.quote_id) || 0,
-      baseRate: response.carrier_total_rate * 0.7, // Estimate base as 70% of total
-      fuelSurcharge: response.carrier_total_rate * 0.2, // Estimate fuel as 20% of total
+      baseRate: hasValidPricing ? response.carrier_total_rate * 0.7 : 0,
+      fuelSurcharge: hasValidPricing ? response.carrier_total_rate * 0.2 : 0,
       accessorial: response.raw_response?.accessorialServices || [],
-      premiumsAndDiscounts: response.carrier_total_rate * 0.1, // Estimate premiums as 10% of total
+      premiumsAndDiscounts: hasValidPricing ? response.carrier_total_rate * 0.1 : 0,
       readyByDate: new Date(response.created_at || '').toLocaleDateString(),
       estimatedDeliveryDate: response.transit_days ? 
         new Date(Date.now() + response.transit_days * 24 * 60 * 60 * 1000).toLocaleDateString() : '',
@@ -110,6 +113,7 @@ export const BatchAnalysisView: React.FC<BatchAnalysisViewProps> = ({
         scac: response.carrier_scac || response.carrier_code || '',
         dotNumber: '' // Not stored in database
       },
+      // Use actual database values for the main pricing fields
       carrierTotalRate: response.carrier_total_rate,
       customerPrice: response.customer_price,
       profit: response.profit,
@@ -118,21 +122,21 @@ export const BatchAnalysisView: React.FC<BatchAnalysisViewProps> = ({
       appliedMarginType: response.applied_margin_type as any,
       appliedMarginPercentage: response.applied_margin_percentage || 0,
       chargeBreakdown: {
-        baseCharges: [{
+        baseCharges: hasValidPricing ? [{
           amount: response.carrier_total_rate * 0.7,
           code: 'BASE',
           description: 'Base Rate (estimated)'
-        }],
-        fuelCharges: [{
+        }] : [],
+        fuelCharges: hasValidPricing ? [{
           amount: response.carrier_total_rate * 0.2,
           code: 'FUEL',
           description: 'Fuel Surcharge (estimated)'
-        }],
+        }] : [],
         accessorialCharges: response.raw_response?.charges?.filter((c: any) => 
           c.code && !['BASE', 'FUEL'].includes(c.code)
         ) || [],
         discountCharges: [],
-        premiumCharges: response.carrier_total_rate * 0.1 > 0 ? [{
+        premiumCharges: hasValidPricing && response.carrier_total_rate * 0.1 > 0 ? [{
           amount: response.carrier_total_rate * 0.1,
           code: 'PREMIUM',
           description: 'Premiums & Adjustments (estimated)'

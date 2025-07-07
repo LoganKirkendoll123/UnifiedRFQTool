@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { v4 as uuidv4 } from 'uuid';
 import { 
   Zap, 
   MapPin, 
@@ -458,7 +459,8 @@ export const UnifiedRFQTool: React.FC<UnifiedRFQToolProps> = ({
       await rfqProcessor.processMultipleRFQs(data, {
         selectedCarriers,
         pricingSettings,
-        selectedCustomer: customers[0] || '' // Use first customer or empty string
+        selectedCustomer: customers[0] || '', // Use first customer or empty string
+        batchName: `${inputSource}-rfq-batch-${uuidv4()}`
       });
     }
   };

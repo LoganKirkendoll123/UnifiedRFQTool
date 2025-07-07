@@ -30,6 +30,7 @@ import { clearMarginCache } from './utils/pricingCalculator';
 import { useRFQProcessor } from './hooks/useRFQProcessor';
 import { useCarrierManagement } from './hooks/useCarrierManagement';
 import { PastBatchManager } from './components/PastBatchManager';
+import { MarginAnalysisMode } from './components/MarginAnalysisMode';
 import { 
   Truck, 
   Upload, 
@@ -86,7 +87,7 @@ function App() {
   const [selectedCustomer, setSelectedCustomer] = useState<string>('');
   
   // UI state
-  const [activeTab, setActiveTab] = useState<'unified' | 'batches'>('unified');
+  const [activeTab, setActiveTab] = useState<'unified' | 'batches' | 'margin-analysis'>('unified');
   const [fileError, setFileError] = useState<string>('');
   
   // API clients - store as instance variables to maintain token state
@@ -319,6 +320,18 @@ function App() {
                 <BarChart3 className="h-4 w-4" />
                 <span>Batch History & Analytics</span>
               </button>
+              
+              <button
+                onClick={() => setActiveTab('margin-analysis')}
+                className={`flex items-center space-x-2 py-4 border-b-2 font-medium text-sm transition-colors ${
+                  activeTab === 'margin-analysis'
+                    ? 'border-green-500 text-green-600'
+                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                }`}
+              >
+                <Calculator className="h-4 w-4" />
+                <span>Margin Analysis</span>
+              </button>
             </nav>
           </div>
         </div>
@@ -360,6 +373,34 @@ function App() {
                   carrierManagement.setSelectedCarriers(carriers);
                   setPricingSettings(settings);
                   setActiveTab('unified');
+                }}
+              />
+            </div>
+          )}
+          
+          {activeTab === 'margin-analysis' && (
+            <div className="space-y-6">
+              <div className="bg-white rounded-lg shadow-md p-6">
+                <div className="flex items-center space-x-3 mb-4">
+                  <div className="bg-green-600 p-2 rounded-lg">
+                    <Calculator className="h-5 w-5 text-white" />
+                  </div>
+                  <div>
+                    <h2 className="text-xl font-semibold text-gray-900">Customer-Carrier Margin Analysis</h2>
+                    <p className="text-sm text-gray-600">
+                      Select a past batch, reprocess with current settings, and determine optimal margins per customer per carrier
+                    </p>
+                  </div>
+                </div>
+              </div>
+              
+              <MarginAnalysisMode
+                project44Client={project44Client}
+                freshxClient={freshxClient}
+                pricingSettings={pricingSettings}
+                selectedCustomer={selectedCustomer}
+                onMarginRecommendation={(customer, carrier, recommendedMargin) => {
+                  console.log(`💰 Margin recommendation: ${customer} + ${carrier} = ${recommendedMargin}%`);
                 }}
               />
             </div>

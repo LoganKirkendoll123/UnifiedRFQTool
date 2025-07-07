@@ -216,13 +216,13 @@ function App() {
               </div>
               
               {/* Connection Status */}
-              <div className="flex items-center space-x-4 bg-slate-50 rounded-lg px-4 py-2">
+              <div className="flex items-center space-x-4 bg-slate-50 rounded-lg px-4 py-2 border">
                 <div className="flex items-center space-x-2">
-                  <div className={`w-2.5 h-2.5 rounded-full ${isProject44Valid ? 'bg-emerald-500 shadow-emerald-500/50 shadow-lg' : 'bg-slate-300'}`} />
+                  <div className={`w-2.5 h-2.5 rounded-full ${isProject44Valid ? 'bg-emerald-500 shadow-emerald-500/50 shadow-lg' : 'bg-red-400'}`} />
                   <span className="text-sm font-medium text-slate-700">Project44</span>
                 </div>
                 <div className="flex items-center space-x-2">
-                  <div className={`w-2.5 h-2.5 rounded-full ${isFreshXValid ? 'bg-emerald-500 shadow-emerald-500/50 shadow-lg' : 'bg-slate-300'}`} />
+                  <div className={`w-2.5 h-2.5 rounded-full ${isFreshXValid ? 'bg-emerald-500 shadow-emerald-500/50 shadow-lg' : 'bg-red-400'}`} />
                   <span className="text-sm font-medium text-slate-700">FreshX</span>
                 </div>
               </div>
@@ -268,6 +268,29 @@ function App() {
 
       {/* Main Content */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        {/* Configuration Status Banner */}
+        {(!isProject44Valid || !isFreshXValid) && (
+          <div className="mb-6 p-4 bg-amber-50 border border-amber-200 rounded-lg">
+            <div className="flex items-start space-x-3">
+              <AlertCircle className="h-5 w-5 text-amber-600 flex-shrink-0 mt-0.5" />
+              <div className="text-sm text-amber-800">
+                <p className="font-medium mb-2">⚠️ API Configuration Required</p>
+                <div className="space-y-1 text-xs">
+                  {!isProject44Valid && (
+                    <p>• <strong>Project44:</strong> Configure your OAuth Client ID and Client Secret to load carriers and get LTL quotes</p>
+                  )}
+                  {!isFreshXValid && (
+                    <p>• <strong>FreshX:</strong> Configure your API key to get refrigerated freight quotes</p>
+                  )}
+                  <p className="mt-2 text-amber-700">
+                    <strong>Note:</strong> The app will work with limited functionality until these APIs are configured.
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Unified RFQ Tool - Main Interface */}
         <UnifiedRFQTool
           project44Client={project44Client}

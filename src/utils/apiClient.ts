@@ -238,7 +238,17 @@ export class Project44APIClient {
       return carrierGroups;
 
     } catch (error) {
-      console.error('❌ Error in getAvailableCarriersByGroup:', error);
+      let errorMessage = 'Error loading carriers';
+      if (error instanceof Error) {
+        if (error.message.includes('Failed to fetch')) {
+          errorMessage = 'Network connection failed. Please check your Project44 OAuth credentials and internet connection.';
+        } else if (error.message.includes('OAuth')) {
+          errorMessage = 'Project44 authentication failed. Please verify your OAuth configuration.';
+        } else {
+          errorMessage = error.message;
+        }
+      }
+      console.error('❌ Error in getAvailableCarriersByGroup:', errorMessage, error);
       // Fallback to the old method if the new API fails
       console.log('🔄 Falling back to capacity providers endpoint...');
       return await this.getCarriersWithoutGroups(token, baseUrl, isVolumeMode, isFTLMode);

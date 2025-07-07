@@ -14,7 +14,7 @@ export const useCarrierManagement = ({ project44Client }: UseCarrierManagementOp
   // Load carriers
   const loadCarriers = useCallback(async () => {
     if (!project44Client) {
-      console.log('❌ Cannot load carriers - Project44 client not available');
+      console.log('❌ Cannot load carriers - Project44 client not available. Please configure your Project44 OAuth credentials.');
       return;
     }
 
@@ -27,7 +27,17 @@ export const useCarrierManagement = ({ project44Client }: UseCarrierManagementOp
       setCarriersLoaded(true);
       console.log(`✅ Loaded ${groups.length} carrier groups`);
     } catch (error) {
-      console.error('❌ Failed to load carriers:', error);
+      let errorMessage = 'Failed to load carriers';
+      if (error instanceof Error) {
+        if (error.message.includes('Failed to fetch')) {
+          errorMessage = 'Unable to connect to Project44 API. Please check your OAuth credentials.';
+        } else if (error.message.includes('OAuth')) {
+          errorMessage = 'Project44 authentication failed. Please verify your Client ID and Client Secret.';
+        } else {
+          errorMessage = error.message;
+        }
+      }
+      console.error('❌ Failed to load carriers:', errorMessage, error);
       setCarrierGroups([]);
       setCarriersLoaded(false);
     } finally {

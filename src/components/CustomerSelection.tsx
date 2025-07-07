@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Search, Users, Building2, CheckCircle, AlertCircle } from 'lucide-react';
-import { supabase } from '../utils/supabase';
+import { supabase, checkSupabaseConnection } from '../utils/supabase';
 
 interface CustomerSelectionProps {
   selectedCustomer: string;
@@ -37,6 +37,12 @@ export const CustomerSelection: React.FC<CustomerSelectionProps> = ({
     setLoading(true);
     setError('');
     try {
+      // Check if Supabase is properly configured
+      const { connected, error: connectionError } = await checkSupabaseConnection();
+      if (!connected) {
+        throw new Error(`Supabase not configured: ${connectionError}`);
+      }
+
       // Get unique customers from CustomerCarriers table
       console.log('🔍 Loading all customers from CustomerCarriers...');
       
@@ -73,7 +79,16 @@ export const CustomerSelection: React.FC<CustomerSelectionProps> = ({
       setFilteredCustomers(uniqueCustomers);
       console.log(`✅ Loaded ${uniqueCustomers.length} unique customers from ${allCustomers.length} total records`);
     } catch (err) {
-      const errorMsg = err instanceof Error ? err.message : 'Failed to load customers';
+      let errorMsg = 'Failed to load customers';
+      if (err instanceof Error) {
+        if (err.message.includes('Supabase not configured')) {
+          errorMsg = 'Supabase database not configured. Please set up your Supabase credentials.';
+        } else if (err.message.includes('Failed to fetch')) {
+          errorMsg = 'Unable to connect to database. Please check your Supabase configuration.';
+        } else {
+          errorMsg = err.message;
+        }
+      }
       setError(errorMsg);
       console.error('❌ Failed to load customers:', err);
     } finally {
@@ -142,9 +157,16 @@ export const CustomerSelection: React.FC<CustomerSelectionProps> = ({
                   Loading customers...
                 </div>
               ) : error ? (
-                <div className="p-4 text-center text-red-600 flex items-center justify-center space-x-2">
+                <div className="p-4 text-center text-red-600">
                   <AlertCircle className="h-4 w-4" />
-                  <span>{error}</span>
+                  <div className="text-sm">
+                    <p className="font-medium mb-1">{error}</p>
+                    {error.includes('Supabase') && (
+                      <p className="text-xs text-red-500">
+                        Click "Connect to Supabase" in the top right to set up your database connection.
+                      </p>
+                    )}
+                  </div>
                 </div>
               ) : filteredCustomers.length === 0 ? (
                 <div className="p-4 text-center text-gray-500">

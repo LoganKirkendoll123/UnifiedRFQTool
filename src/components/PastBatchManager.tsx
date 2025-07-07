@@ -13,6 +13,7 @@ import {
   Users,
   Filter,
   ChevronDown,
+  ArrowRight,
   AlertCircle,
   CheckCircle,
   Loader
@@ -30,7 +31,6 @@ interface PastBatchManagerProps {
   pricingSettings: PricingSettings;
   selectedCustomer: string;
   onBatchSettingsLoad?: (customer: string, carriers: { [carrierId: string]: boolean }, pricingSettings: PricingSettings) => void;
-  onBatchSettingsLoad?: (customer: string, carriers: { [carrierId: string]: boolean }, pricingSettings: PricingSettings) => void;
 }
 
 export const PastBatchManager: React.FC<PastBatchManagerProps> = ({
@@ -38,8 +38,7 @@ export const PastBatchManager: React.FC<PastBatchManagerProps> = ({
   freshxClient,
   onClose,
   pricingSettings,
-  selectedCustomer
-  onBatchSettingsLoad
+  selectedCustomer,
   onBatchSettingsLoad
 }) => {
   const [batches, setBatches] = useState<BatchData[]>([]);
@@ -94,21 +93,6 @@ export const PastBatchManager: React.FC<PastBatchManagerProps> = ({
       setBatchRequests(requests);
       setOriginalResponses(responses);
       setNewResponses([]); // Clear any previous new responses
-      
-      // Auto-load batch settings when a batch is selected
-      if (onBatchSettingsLoad) {
-        const batchCustomer = batch.customer_name || '';
-        const batchCarriers = batch.selected_carriers || {};
-        const batchPricingSettings = batch.pricing_settings || pricingSettings;
-        
-        console.log(`🔄 Auto-loading batch settings:`, {
-          customer: batchCustomer,
-          carriers: Object.keys(batchCarriers).length,
-          pricingSettings: batchPricingSettings
-        });
-        
-        onBatchSettingsLoad(batchCustomer, batchCarriers, batchPricingSettings);
-      }
       
       // Auto-load batch settings when a batch is selected
       if (onBatchSettingsLoad) {
@@ -249,10 +233,9 @@ export const PastBatchManager: React.FC<PastBatchManagerProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-      <div className="bg-white rounded-xl shadow-2xl max-w-6xl w-full max-h-[90vh] overflow-hidden">
+    <div className="bg-white rounded-lg shadow-lg overflow-hidden">
         {/* Header */}
-        <div className="bg-gradient-to-r from-purple-600 to-indigo-600 px-6 py-4 text-white">
+        <div className="bg-gradient-to-r from-purple-600 to-indigo-600 px-6 py-6 text-white">
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-3">
               <History className="h-6 w-6" />
@@ -263,19 +246,10 @@ export const PastBatchManager: React.FC<PastBatchManagerProps> = ({
                 </p>
               </div>
             </div>
-            <button
-              onClick={onClose}
-              className="text-white hover:text-gray-200 transition-colors"
-            >
-              <span className="sr-only">Close</span>
-              <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-              </svg>
-            </button>
           </div>
         </div>
 
-        <div className="flex h-[calc(90vh-80px)]">
+        <div className="flex min-h-[600px]">
           {/* Batch List */}
           <div className="w-1/2 border-r border-gray-200 overflow-hidden flex flex-col">
             {/* Search and Filters */}
@@ -438,12 +412,21 @@ export const PastBatchManager: React.FC<PastBatchManagerProps> = ({
                       <div>• Original pricing settings loaded</div>
                     </div>
                     
-                    <div className="text-xs text-gray-600 bg-blue-50 px-3 py-2 rounded-lg">
-                      <div className="font-medium text-blue-900">Reprocessing will use:</div>
-                      <div>Customer: {selectedBatch.customer_name || 'None'}</div>
-                      <div>Carriers: {Object.keys(selectedBatch.selected_carriers || {}).length} selected</div>
-                      <div>Original pricing settings loaded</div>
-                    </div>
+                    {onBatchSettingsLoad && (
+                      <button
+                        onClick={() => {
+                          const batchCustomer = selectedBatch.customer_name || '';
+                          const batchCarriers = selectedBatch.selected_carriers || {};
+                          const batchPricingSettings = selectedBatch.pricing_settings || pricingSettings;
+                          onBatchSettingsLoad(batchCustomer, batchCarriers, batchPricingSettings);
+                        }}
+                        className="flex items-center space-x-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
+                      >
+                        <ArrowRight className="h-4 w-4" />
+                        <span>Load Settings & Switch to Quoting</span>
+                      </button>
+                    )}
+                    
                     <button
                       onClick={reprocessBatch}
                       disabled={reprocessing || batchRequests.length === 0}
@@ -594,7 +577,6 @@ export const PastBatchManager: React.FC<PastBatchManagerProps> = ({
             onClose={() => setShowAnalytics(false)}
           />
         )}
-      </div>
     </div>
   );
 };

@@ -29,6 +29,7 @@ import {
 import { clearMarginCache } from './utils/pricingCalculator';
 import { useRFQProcessor } from './hooks/useRFQProcessor';
 import { useCarrierManagement } from './hooks/useCarrierManagement';
+import { PastBatchManager } from './components/PastBatchManager';
 import { 
   Truck, 
   Upload, 
@@ -85,7 +86,7 @@ function App() {
   const [selectedCustomer, setSelectedCustomer] = useState<string>('');
   
   // UI state
-  const [activeTab, setActiveTab] = useState<'unified'>('unified');
+  const [activeTab, setActiveTab] = useState<'unified' | 'batches'>('unified');
   const [fileError, setFileError] = useState<string>('');
   
   // API clients - store as instance variables to maintain token state
@@ -291,13 +292,78 @@ function App() {
           </div>
         )}
 
-        {/* Unified RFQ Tool - Main Interface */}
-        <UnifiedRFQTool
-          project44Client={project44Client}
-          freshxClient={freshxClient}
-          initialPricingSettings={pricingSettings}
-          initialSelectedCustomer={selectedCustomer}
-        />
+        {/* Tab Navigation */}
+        <div className="bg-white shadow-sm border-b border-gray-200">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <nav className="flex space-x-8">
+              <button
+                onClick={() => setActiveTab('unified')}
+                className={`flex items-center space-x-2 py-4 border-b-2 font-medium text-sm transition-colors ${
+                  activeTab === 'unified'
+                    ? 'border-blue-500 text-blue-600'
+                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                }`}
+              >
+                <Play className="h-4 w-4" />
+                <span>Smart Quoting</span>
+              </button>
+              
+              <button
+                onClick={() => setActiveTab('batches')}
+                className={`flex items-center space-x-2 py-4 border-b-2 font-medium text-sm transition-colors ${
+                  activeTab === 'batches'
+                    ? 'border-purple-500 text-purple-600'
+                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                }`}
+              >
+                <BarChart3 className="h-4 w-4" />
+                <span>Batch History & Analytics</span>
+              </button>
+            </nav>
+          </div>
+        </div>
+
+          {activeTab === 'unified' && (
+            <UnifiedRFQTool
+              project44Client={project44Client}
+              freshxClient={freshxClient}
+              initialPricingSettings={pricingSettings}
+              initialSelectedCustomer={selectedCustomer}
+            />
+          )}
+          
+          {activeTab === 'batches' && (
+            <div className="space-y-6">
+              <div className="bg-white rounded-lg shadow-md p-6">
+                <div className="flex items-center space-x-3 mb-4">
+                  <div className="bg-purple-600 p-2 rounded-lg">
+                    <BarChart3 className="h-5 w-5 text-white" />
+                  </div>
+                  <div>
+                    <h2 className="text-xl font-semibold text-gray-900">Batch History & Analytics</h2>
+                    <p className="text-sm text-gray-600">
+                      View past RFQ batches, reprocess with current settings, and analyze market changes
+                    </p>
+                  </div>
+                </div>
+              </div>
+              
+              <PastBatchManager
+                project44Client={project44Client}
+                freshxClient={freshxClient}
+                onClose={() => {}} // Not needed since it's not a modal
+                pricingSettings={pricingSettings}
+                selectedCustomer={selectedCustomer}
+                onBatchSettingsLoad={(customer, carriers, settings) => {
+                  // Auto-switch to unified tab and load settings
+                  setSelectedCustomer(customer);
+                  carrierManagement.setSelectedCarriers(carriers);
+                  setPricingSettings(settings);
+                  setActiveTab('unified');
+                }}
+              />
+            </div>
+          )}
 
       </main>
     </div>

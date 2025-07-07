@@ -345,17 +345,17 @@ export const CarrierCards: React.FC<CarrierCardsProps> = ({
 }) => {
   // Group quotes by carrierCode, fallback to carrier name
   const carrierGroups = quotes.reduce((groups, quote) => {
-    const carrierKey = quote.carrierCode || quote.carrier.name;
-    const carrierName = quote.carrier.name;
+    const carrierKey = quote.carrierCode || quote.carrier?.name || 'Unknown Carrier';
+    const carrierName = quote.carrier?.name || 'Unknown Carrier';
     
     if (!groups[carrierKey]) {
       groups[carrierKey] = {
         carrierCode: quote.carrierCode || carrierKey,
         name: carrierName,
         info: {
-          scac: quote.carrier.scac || quote.carrierCode,
-          mcNumber: quote.carrier.mcNumber,
-          dotNumber: quote.carrier.dotNumber
+          scac: quote.carrier?.scac || quote.carrierCode,
+          mcNumber: quote.carrier?.mcNumber,
+          dotNumber: quote.carrier?.dotNumber
         },
         quotes: []
       };

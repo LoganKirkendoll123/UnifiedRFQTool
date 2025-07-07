@@ -539,6 +539,12 @@ export const loadRFQBatch = async (batchId: string): Promise<{
     // Convert requests back to RFQRow format
     const rfqData: RFQRow[] = batchData.requests.map(request => request.request_payload);
 
+    // Check if the batch has no RFQ data
+    if (rfqData.length === 0) {
+      console.log('ℹ️ RFQ batch exists but contains no requests:', batchId);
+      return null;
+    }
+
     // Reconstruct results if available
     let resultsData;
     try {

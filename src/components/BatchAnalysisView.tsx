@@ -348,7 +348,6 @@ export const BatchAnalysisView: React.FC<BatchAnalysisViewProps> = ({
               className="flex items-center space-x-2 text-gray-600 hover:text-gray-900 transition-colors"
             >
               <ArrowLeft className="h-5 w-5" />
-                      quotes={analysis.newQuotes.map(Project44APIClient.convertBatchResponseToQuoteWithPricing)}
             </button>
             <div className="h-6 w-px bg-gray-300"></div>
             <div>

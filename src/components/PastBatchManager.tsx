@@ -51,6 +51,8 @@ export const PastBatchManager: React.FC<PastBatchManagerProps> = ({
   const [sortBy, setSortBy] = useState<'created_at' | 'batch_name' | 'total_rfqs'>('created_at');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
   const [filterBy, setFilterBy] = useState<'all' | 'recent' | 'large'>('all');
+  const [loadingBatchDetails, setLoadingBatchDetails] = useState(false);
+  const [batchError, setBatchError] = useState<string>('');
   const [reprocessing, setReprocessing] = useState(false);
   const [showAnalytics, setShowAnalytics] = useState(false);
   const [currentProgress, setCurrentProgress] = useState({ current: 0, total: 0, item: '' });
@@ -81,6 +83,9 @@ export const PastBatchManager: React.FC<PastBatchManagerProps> = ({
   const loadBatchDetails = async (batch: BatchData) => {
     if (!project44Client) return;
 
+    setLoadingBatchDetails(true);
+    setBatchError('');
+    
     try {
       console.log(`📋 Loading details for batch ${batch.id}...`);
       setSelectedBatch(batch);
@@ -111,7 +116,12 @@ export const PastBatchManager: React.FC<PastBatchManagerProps> = ({
       
       console.log(`✅ Loaded ${requests.length} requests and ${responses.length} responses`);
     } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Failed to load batch details';
+      setBatchError(errorMessage);
       console.error('❌ Failed to load batch details:', error);
+      // Don't reset selectedBatch on error - keep it selected
+    } finally {
+      setLoadingBatchDetails(false);
     }
   };
 

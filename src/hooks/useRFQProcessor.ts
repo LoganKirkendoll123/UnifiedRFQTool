@@ -42,8 +42,7 @@ export const useRFQProcessor = ({ project44Client, freshxClient }: UseRFQProcess
   // Process single RFQ
   const processSingleRFQ = useCallback(async (
     rfq: RFQRow,
-    options: RFQProcessingOptions,
-    batchName?: string
+    options: RFQProcessingOptions
   ): Promise<SmartQuotingResult> => {
     setProcessingStatus({
       isProcessing: true,
@@ -52,22 +51,28 @@ export const useRFQProcessor = ({ project44Client, freshxClient }: UseRFQProcess
       currentItem: 'Processing RFQ...'
     });
 
+    // Always create a batch for single RFQ processing
     let batchId: string | null = null;
-    
-    // Create batch if batch name is provided
-    if (batchName) {
-      try {
-        batchId = await createRFQBatch(
-          batchName,
-          options.pricingSettings,
-          options.selectedCarriers,
-          options.selectedCustomer
-        );
-        setCurrentBatchId(batchId);
-        console.log('📦 Created batch for single RFQ:', batchId);
-      } catch (error) {
-        console.error('❌ Failed to create batch for single RFQ:', error);
-      }
+    try {
+      const batchName = `Single RFQ - ${new Date().toLocaleString('en-US', {
+        month: 'short',
+        day: 'numeric',
+        hour: 'numeric',
+        minute: '2-digit',
+        hour12: true
+      })}`;
+      
+      batchId = await createRFQBatch(
+        batchName,
+        options.pricingSettings,
+        options.selectedCarriers,
+        options.selectedCustomer,
+        'single'
+      );
+      setCurrentBatchId(batchId);
+      console.log('📦 Created batch for single RFQ:', batchId);
+    } catch (error) {
+      console.error('❌ Failed to create batch for single RFQ:', error);
     }
 
     try {
@@ -111,9 +116,6 @@ export const useRFQProcessor = ({ project44Client, freshxClient }: UseRFQProcess
       throw error;
     } finally {
       setProcessingStatus(prev => ({ ...prev, isProcessing: false }));
-      if (!batchName) {
-        setCurrentBatchId(null);
-      }
     }
   }, [processor]);
 
@@ -249,8 +251,7 @@ export const useRFQProcessor = ({ project44Client, freshxClient }: UseRFQProcess
   const processRFQsForAccountGroup = useCallback(async (
     rfqs: RFQRow[],
     accountGroupCode: string,
-    options: Omit<RFQProcessingOptions, 'selectedCarriers'>,
-    batchName?: string
+    options: Omit<RFQProcessingOptions, 'selectedCarriers'>
   ): Promise<SmartQuotingResult[]> => {
     setProcessingStatus({
       isProcessing: true,
@@ -259,23 +260,28 @@ export const useRFQProcessor = ({ project44Client, freshxClient }: UseRFQProcess
     });
     setResults([]);
 
+    // Always create a batch for account group processing
     let batchId: string | null = null;
-    
-    // Create batch if batch name is provided
-    if (batchName) {
-      try {
-        batchId = await createRFQBatch(
-          batchName,
-          options.pricingSettings,
-          {}, // No specific carriers for account group
-          options.selectedCustomer,
-          'account-group'
-        );
-        setCurrentBatchId(batchId);
-        console.log('📦 Created batch for account group processing:', batchId);
-      } catch (error) {
-        console.error('❌ Failed to create batch for account group:', error);
-      }
+    try {
+      const batchName = `Account Group ${accountGroupCode} - ${rfqs.length} RFQs - ${new Date().toLocaleString('en-US', {
+        month: 'short',
+        day: 'numeric',
+        hour: 'numeric',
+        minute: '2-digit',
+        hour12: true
+      })}`;
+      
+      batchId = await createRFQBatch(
+        batchName,
+        options.pricingSettings,
+        {}, // No specific carriers for account group
+        options.selectedCustomer,
+        'account-group'
+      );
+      setCurrentBatchId(batchId);
+      console.log('📦 Created batch for account group processing:', batchId);
+    } catch (error) {
+      console.error('❌ Failed to create batch for account group:', error);
     }
 
     const processingOptions = {
@@ -371,9 +377,6 @@ export const useRFQProcessor = ({ project44Client, freshxClient }: UseRFQProcess
       throw error;
     } finally {
       setProcessingStatus(prev => ({ ...prev, isProcessing: false }));
-      if (!batchName) {
-        setCurrentBatchId(null);
-      }
     }
   }, [processor]);
 

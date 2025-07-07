@@ -58,8 +58,6 @@ export const BatchAnalysisView: React.FC<BatchAnalysisViewProps> = ({
 }) => {
   const [expandedShipments, setExpandedShipments] = useState<Set<string>>(new Set());
   const [shipmentAnalyses, setShipmentAnalyses] = useState<ShipmentAnalysis[]>([]);
-  const [isLoadingSavedAnalysis, setIsLoadingSavedAnalysis] = useState(false);
-  const [savedAnalysisData, setSavedAnalysisData] = useState<any>(null);
   const [overallStats, setOverallStats] = useState({
     betterPricingCount: 0,
     worsePricingCount: 0,
@@ -70,30 +68,8 @@ export const BatchAnalysisView: React.FC<BatchAnalysisViewProps> = ({
 
   // Load saved analysis if analysisId is provided
   useEffect(() => {
-    if (analysisId) {
-      loadSavedAnalysis();
-    } else {
-      calculateAnalyses();
-    }
+    calculateAnalyses();
   }, [requests, responses, newResponses, analysisId]);
-
-  const loadSavedAnalysis = async () => {
-    if (!analysisId) return;
-
-    setIsLoadingSavedAnalysis(true);
-    try {
-      // Note: This would need to be passed from the parent component
-      // or we'd need access to the API client here
-      console.log(`📋 Loading saved analysis data for: ${analysisId}`);
-      // For now, fall back to calculating from current data
-      calculateAnalyses();
-    } catch (error) {
-      console.error('❌ Failed to load saved analysis:', error);
-      calculateAnalyses();
-    } finally {
-      setIsLoadingSavedAnalysis(false);
-    }
-  };
 
   // Helper function to extract pricing from BatchResponse (including from raw_response)
   const extractPricingFromResponse = (response: BatchResponse): { carrierRate: number; customerPrice: number; profit: number; transitDays?: number } => {

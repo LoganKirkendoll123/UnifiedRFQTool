@@ -633,17 +633,17 @@ export const PastBatchManager: React.FC<PastBatchManagerProps> = ({
                     <button
                       onClick={reprocessBatch}
                       disabled={reprocessing || batchRequests.length === 0}
-                      className="flex items-center space-x-2 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors"
+                      className="flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors"
                     >
                       {reprocessing ? (
                         <>
                           <Loader className="h-4 w-4 animate-spin" />
-                          <span>Reprocessing & Analyzing...</span>
+                          <span>Analyzing...</span>
                         </>
                       ) : (
                         <>
                           <RefreshCw className="h-4 w-4" />
-                          <span>Compare with Current Settings</span>
+                          <span>Analyze with Current Settings</span>
                         </>
                       )}
                     </button>

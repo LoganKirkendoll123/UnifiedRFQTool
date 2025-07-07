@@ -43,7 +43,6 @@ import { FileUpload } from './FileUpload';
 import { parseCSV, parseXLSX } from '../utils/fileParser';
 import { useRFQProcessor } from '../hooks/useRFQProcessor';
 import { useCarrierManagement } from '../hooks/useCarrierManagement';
-import { usePricingSettings } from '../hooks/usePricingSettings';
 import { saveRFQBatch, calculateBatchSummary } from '../utils/rfqBatchManager';
 import { supabase } from '../utils/supabase';
 import * as XLSX from 'xlsx';
@@ -142,13 +141,17 @@ export const UnifiedRFQTool: React.FC<UnifiedRFQToolProps> = ({
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [formError, setFormError] = useState<string>('');
   
-  // Use consolidated hooks
-  const { 
-    pricingSettings, 
-    selectedCustomer, 
-    updatePricingSettings, 
-    updateSelectedCustomer 
-  } = usePricingSettings(initialPricingSettings);
+  // Local state for pricing settings and customer selection
+  const [pricingSettings, setPricingSettings] = useState<PricingSettings>(initialPricingSettings);
+  const [selectedCustomer, setSelectedCustomer] = useState<string>(initialSelectedCustomer || '');
+  
+  const updatePricingSettings = (newSettings: PricingSettings) => {
+    setPricingSettings(newSettings);
+  };
+  
+  const updateSelectedCustomer = (customer: string) => {
+    setSelectedCustomer(customer);
+  };
   
   const carrierManagement = useCarrierManagement({ project44Client });
   
@@ -487,12 +490,12 @@ export const UnifiedRFQTool: React.FC<UnifiedRFQToolProps> = ({
       
       const batch = {
         batch_name: batchName,
-        customer_name: pricingSettings.selectedCustomer || undefined,
+        customer_name: selectedCustomer || undefined,
         shipment_count: rfqData.length,
         total_quotes_received: summary.total_quotes_received,
         best_total_price: summary.best_total_price,
         total_profit: summary.total_profit,
-        pricing_settings: pricingSettings.pricingSettings,
+        pricing_settings: pricingSettings,
         selected_carriers: carrierManagement.selectedCarriers,
         rfq_data: rfqData,
         results_data: rfqProcessor.results,

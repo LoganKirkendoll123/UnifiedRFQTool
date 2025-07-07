@@ -565,7 +565,7 @@ export const PastBatchManager: React.FC<PastBatchManagerProps> = ({
                   </div>
                 </div>
               </>
-            ) : (
+            ) : !loadingBatchDetails && !batchError && (
               <div className="flex items-center justify-center h-full">
                 <div className="text-center">
                   <History className="h-12 w-12 text-gray-400 mx-auto" />

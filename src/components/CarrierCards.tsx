@@ -86,12 +86,9 @@ const CarrierCard: React.FC<CarrierCardProps> = ({
   // Calculate carrier statistics
   const avgPrice = quotes.reduce((sum, q) => sum + q.customerPrice, 0) / quotes.length;
   const avgProfit = quotes.reduce((sum, q) => sum + q.profit, 0) / quotes.length;
-  
-  // Calculate average transit days with better filtering
-  const quotesWithTransitDays = quotes.filter(q => q.transitDays && q.transitDays > 0);
-  const avgTransitDays = quotesWithTransitDays.length > 0
-    ? quotesWithTransitDays.reduce((sum, q) => sum + (q.transitDays || 0), 0) / quotesWithTransitDays.length
-    : null;
+  const avgTransitDays = quotes
+    .filter(q => q.transitDays)
+    .reduce((sum, q) => sum + (q.transitDays || 0), 0) / quotes.filter(q => q.transitDays).length;
   
   const getServiceLevelIcon = (serviceCode?: string) => {
     if (!serviceCode) return Clock;
@@ -192,10 +189,10 @@ const CarrierCard: React.FC<CarrierCardProps> = ({
           
           <div className="text-center">
             <div className="text-2xl font-bold text-purple-600">
-              {avgTransitDays ? `${Math.round(avgTransitDays)}` : 'N/A'}
+              {avgTransitDays ? `${avgTransitDays.toFixed(1)}` : 'N/A'}
             </div>
             <div className="text-xs text-gray-500">Avg Transit Days</div>
-            {bestQuote.transitDays && bestQuote.transitDays > 0 && (
+            {bestQuote.transitDays && (
               <div className="text-xs text-gray-600 mt-1">
                 Best: {bestQuote.transitDays} days
               </div>
@@ -247,7 +244,7 @@ const CarrierCard: React.FC<CarrierCardProps> = ({
                       </div>
                       <div className={`text-xs ${isLowestPrice ? 'text-green-600' : isSelected ? 'text-blue-600' : 'text-gray-600'}`}>
                         Code: {serviceCode}
-                        {quote.transitDays && quote.transitDays > 0 && ` • ${quote.transitDays} day${quote.transitDays !== 1 ? 's' : ''}`}
+                        {quote.transitDays && ` • ${quote.transitDays} day${quote.transitDays !== 1 ? 's' : ''}`}
                       </div>
                     </div>
                   </div>

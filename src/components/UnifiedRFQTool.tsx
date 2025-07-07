@@ -274,17 +274,30 @@ export const UnifiedRFQTool: React.FC<UnifiedRFQToolProps> = ({
       const batchData = await loadRFQBatch(batchId);
       
       if (!batchData) {
-        throw new Error('Batch not found');
+        console.warn('⚠️ Batch not found:', batchId);
+        // Clear any existing data and show user-friendly message
+        setPastRFQData([]);
+        setSelectedPastRFQBatch('');
+        return [];
       }
       
       if (!batchData.rfq_data || batchData.rfq_data.length === 0) {
-        throw new Error('No RFQ data found in this batch');
+        console.warn('⚠️ No RFQ data found in batch:', batchId);
+        // Clear any existing data and show user-friendly message
+        setPastRFQData([]);
+        return [];
       }
       
       console.log('✅ Past RFQ data loaded successfully from relational structure');
+      setPastRFQData(batchData.rfq_data);
       return batchData.rfq_data;
     } catch (error) {
-      console.error('Failed to load past RFQ data:', error);
+      console.error('❌ Failed to load past RFQ data:', error);
+      // Clear any existing data on error
+      setPastRFQData([]);
+      setSelectedPastRFQBatch('');
+      // Don't re-throw the error to prevent application crash
+      return [];
     }
   };
   
@@ -380,7 +393,11 @@ export const UnifiedRFQTool: React.FC<UnifiedRFQToolProps> = ({
   
   const handlePastRFQBatchSelect = (batchId: string) => {
     setSelectedPastRFQBatch(batchId);
-    loadPastRFQData(batchId);
+    loadPastRFQData(batchId).catch(error => {
+      console.error('Error selecting past RFQ batch:', error);
+      // Reset selection on error
+      setSelectedPastRFQBatch('');
+    });
   };
   
   const convertHistoricalShipmentsToRFQs = (): RFQRow[] => {

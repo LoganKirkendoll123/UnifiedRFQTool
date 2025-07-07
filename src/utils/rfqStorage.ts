@@ -529,27 +529,7 @@ export const loadRFQBatch = async (batchId: string): Promise<{
   try {
     console.log('📥 Loading RFQ batch for UnifiedRFQTool:', batchId);
 
-    // First try to load from mass_rfq_batches (new format)
-    const { data: massRfqData, error: massRfqError } = await supabase
-      .from('mass_rfq_batches')
-      .select('*')
-      .eq('id', batchId)
-      .single();
-
-    if (!massRfqError && massRfqData) {
-      console.log('✅ Loaded from mass_rfq_batches');
-      return {
-        id: massRfqData.id,
-        batch_name: massRfqData.batch_name,
-        customer_name: massRfqData.customer_name,
-        rfq_data: massRfqData.rfq_data,
-        results_data: massRfqData.results_data,
-        pricing_settings: massRfqData.pricing_settings,
-        selected_carriers: massRfqData.selected_carriers
-      };
-    }
-
-    // Fallback to rfq_batches (old format) and reconstruct
+    // Load from unified relational structure
     const batchData = await loadRFQBatchWithData(batchId);
     if (!batchData) {
       console.log('ℹ️ RFQ batch not found:', batchId);
@@ -568,7 +548,7 @@ export const loadRFQBatch = async (batchId: string): Promise<{
       resultsData = [];
     }
 
-    console.log('✅ Loaded and reconstructed from rfq_batches');
+    console.log('✅ Loaded and reconstructed from unified relational structure');
     return {
       id: batchData.batch.id,
       batch_name: batchData.batch.batch_name,
@@ -602,27 +582,7 @@ export const updateRFQBatch = async (
     const totalProfit = results.reduce((sum, result) => 
       sum + (result.quotes?.reduce((qSum: number, q: any) => qSum + (q.profit || 0), 0) || 0), 0);
 
-    // First try to update mass_rfq_batches
-    const { error: massRfqError } = await supabase
-      .from('mass_rfq_batches')
-      .update({
-        results_data: results,
-        pricing_settings: pricingSettings,
-        selected_carriers: selectedCarriers,
-        customer_name: selectedCustomer,
-        total_quotes_received: totalQuotes,
-        best_total_price: bestTotalPrice,
-        total_profit: totalProfit,
-        updated_at: new Date().toISOString()
-      })
-      .eq('id', batchId);
-
-    if (!massRfqError) {
-      console.log('✅ Updated mass_rfq_batches successfully');
-      return;
-    }
-
-    // Fallback to updating rfq_batches
+    // Update unified relational structure
     const { error: rfqBatchError } = await supabase
       .from('rfq_batches')
       .update({
@@ -641,7 +601,7 @@ export const updateRFQBatch = async (
       throw new Error(`Failed to update RFQ batch: ${rfqBatchError.message}`);
     }
 
-    console.log('✅ Updated rfq_batches successfully');
+    console.log('✅ Updated unified relational structure successfully');
   } catch (error) {
     console.error('❌ Error updating RFQ batch:', error);
     throw error;

@@ -59,6 +59,9 @@ export const PastBatchManager: React.FC<PastBatchManagerProps> = ({
   const [showAnalytics, setShowAnalytics] = useState(false);
   const [showDetailedResults, setShowDetailedResults] = useState(false);
   const [showAnalysisView, setShowAnalysisView] = useState(false);
+  const [selectedAnalysisId, setSelectedAnalysisId] = useState<string | null>(null);
+  const [savedAnalyses, setSavedAnalyses] = useState<any[]>([]);
+  const [loadingAnalyses, setLoadingAnalyses] = useState(false);
   const [currentProgress, setCurrentProgress] = useState({ current: 0, total: 0, item: '' });
   const [carrierNames, setCarrierNames] = useState<{ [carrierId: string]: string }>({});
 
@@ -70,6 +73,29 @@ export const PastBatchManager: React.FC<PastBatchManagerProps> = ({
   useEffect(() => {
     loadCarrierNames();
   }, [project44Client]);
+
+  // Load saved analyses for the selected batch
+  useEffect(() => {
+    if (selectedBatch && project44Client) {
+      loadSavedAnalyses();
+    }
+  }, [selectedBatch, project44Client]);
+
+  const loadSavedAnalyses = async () => {
+    if (!selectedBatch || !project44Client) return;
+
+    setLoadingAnalyses(true);
+    try {
+      const analyses = await project44Client.getBatchAnalyses(selectedBatch.id);
+      setSavedAnalyses(analyses);
+      console.log(`✅ Loaded ${analyses.length} saved analyses for batch ${selectedBatch.id}`);
+    } catch (error) {
+      console.error('❌ Failed to load saved analyses:', error);
+      setSavedAnalyses([]);
+    } finally {
+      setLoadingAnalyses(false);
+    }
+  };
 
   const loadCarrierNames = async () => {
     if (!project44Client) return;
@@ -139,6 +165,114 @@ export const PastBatchManager: React.FC<PastBatchManagerProps> = ({
     }
   };
 
+  const saveAnalysis = async (newBatchId: string) => {
+    if (!selectedBatch || !project44Client || !newBatchId) return;
+
+    try {
+      console.log(`💾 Saving batch analysis comparison...`);
+      
+      // Calculate analysis data
+      const analysisData = calculateAnalysisData();
+      
+      const analysisName = `${selectedBatch.batch_name} - Analysis ${new Date().toLocaleDateString()}`;
+      
+      const analysisId = await project44Client.createBatchAnalysis(
+        selectedBatch.id,
+        newBatchId,
+        analysisName,
+        {
+          pricingSettings,
+          selectedCustomer,
+          reprocessedAt: new Date().toISOString()
+        },
+        analysisData.overallStats,
+        analysisData.shipmentAnalyses
+      );
+      
+      console.log(`✅ Saved batch analysis: ${analysisId}`);
+      
+      // Reload saved analyses
+      await loadSavedAnalyses();
+      
+      // Set the new analysis as selected
+      setSelectedAnalysisId(analysisId);
+      
+      return analysisId;
+    } catch (error) {
+      console.error('❌ Failed to save analysis:', error);
+    }
+  };
+
+  const calculateAnalysisData = () => {
+    // Group responses by request for comparison
+    const originalByRequest = groupResponsesByRequest(originalResponses);
+    const newByRequest = groupResponsesByRequest(newResponses);
+    
+    const shipmentAnalyses = batchRequests.map(request => {
+      const originalQuotes = originalByRequest[request.id] || [];
+      const newQuotes = newByRequest[request.id] || [];
+      
+      const originalBestPrice = originalQuotes.length > 0 
+        ? Math.min(...originalQuotes.map(q => q.customer_price)) 
+        : 0;
+      
+      const newBestPrice = newQuotes.length > 0 
+        ? Math.min(...newQuotes.map(q => q.customer_price)) 
+        : 0;
+      
+      const costDifference = newBestPrice - originalBestPrice;
+      const costDifferencePercent = originalBestPrice > 0 ? (costDifference / originalBestPrice) * 100 : 0;
+      
+      return {
+        requestId: request.id,
+        route: `${request.from_zip} → ${request.to_zip}`,
+        pallets: request.pallets,
+        weight: request.gross_weight,
+        originalBestPrice,
+        newBestPrice,
+        costDifference,
+        costDifferencePercent,
+        originalQuoteCount: originalQuotes.length,
+        newQuoteCount: newQuotes.length,
+        quotingDecision: request.quoting_decision
+      };
+    });
+    
+    // Calculate overall statistics
+    const totalOriginalValue = originalResponses.reduce((sum, r) => sum + r.customer_price, 0);
+    const totalNewValue = newResponses.reduce((sum, r) => sum + r.customer_price, 0);
+    const totalPriceDifference = totalNewValue - totalOriginalValue;
+    const avgPriceChange = totalOriginalValue > 0 ? (totalPriceDifference / totalOriginalValue) * 100 : 0;
+    
+    const betterPricingCount = shipmentAnalyses.filter(s => s.costDifference < 0).length;
+    const worsePricingCount = shipmentAnalyses.filter(s => s.costDifference > 0).length;
+    const unchangedCount = shipmentAnalyses.filter(s => Math.abs(s.costDifference) < 0.01).length;
+    
+    const overallStats = {
+      totalPriceDifference,
+      avgPriceChange,
+      betterPricingCount,
+      worsePricingCount,
+      unchangedCount,
+      totalOriginalQuotes: originalResponses.length,
+      totalNewQuotes: newResponses.length,
+      analyzedShipments: shipmentAnalyses.length
+    };
+    
+    return { overallStats, shipmentAnalyses };
+  };
+
+  const groupResponsesByRequest = (responses: BatchResponse[]) => {
+    return responses.reduce((groups, response) => {
+      const requestId = response.request_id;
+      if (!groups[requestId]) {
+        groups[requestId] = [];
+      }
+      groups[requestId].push(response);
+      return groups;
+    }, {} as Record<string, BatchResponse[]>);
+  };
+
   const reprocessBatch = async () => {
     if (!selectedBatch || !project44Client || !freshxClient || batchRequests.length === 0) {
       console.error('❌ Missing required data for reprocessing');
@@ -188,14 +322,40 @@ export const PastBatchManager: React.FC<PastBatchManagerProps> = ({
       
       console.log(`✅ Loaded ${newBatchResponses.length} new responses for analysis`);
       
-      // Show analytics automatically
-      setShowAnalytics(true);
+      // Save the analysis to the database
+      const analysisId = await saveAnalysis(newBatchId);
+      
+      if (analysisId) {
+        // Switch to analysis view automatically
+        setShowAnalysisView(true);
+      }
       
     } catch (error) {
       console.error('❌ Failed to reprocess batch:', error);
     } finally {
       setReprocessing(false);
       setCurrentProgress({ current: 0, total: 0, item: '' });
+    }
+  };
+
+  const loadSavedAnalysis = async (analysisId: string) => {
+    if (!project44Client) return;
+
+    try {
+      console.log(`📋 Loading saved analysis: ${analysisId}`);
+      
+      const analysis = await project44Client.getBatchAnalysis(analysisId);
+      
+      // Load the comparison batch responses
+      const comparisonResponses = await project44Client.getBatchResponses(analysis.comparison_batch_id);
+      setNewResponses(comparisonResponses);
+      
+      setSelectedAnalysisId(analysisId);
+      setShowAnalysisView(true);
+      
+      console.log(`✅ Loaded analysis with ${comparisonResponses.length} comparison responses`);
+    } catch (error) {
+      console.error('❌ Failed to load saved analysis:', error);
     }
   };
 
@@ -479,27 +639,44 @@ export const PastBatchManager: React.FC<PastBatchManagerProps> = ({
                       {reprocessing ? (
                         <>
                           <Loader className="h-4 w-4 animate-spin" />
-                          <span>Reprocessing...</span>
+                          <span>Reprocessing & Analyzing...</span>
                         </>
                       ) : (
                         <>
                           <RefreshCw className="h-4 w-4" />
-                          <span>Reprocess with Current Settings</span>
+                          <span>Compare with Current Settings</span>
                         </>
                       )}
                     </button>
-
-                    {newResponses.length > 0 && (
-                      <button
-                        onClick={() => setShowAnalytics(true)}
-                        className="flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-                      >
-                        <BarChart3 className="h-4 w-4" />
-                        <span>View Analytics</span>
-                      </button>
-                    )}
                   </div>
                 </div>
+
+                {/* Saved Analyses */}
+                {savedAnalyses.length > 0 && (
+                  <div className="border-t pt-4">
+                    <h4 className="text-sm font-medium text-gray-900 mb-3">Saved Analyses</h4>
+                    <div className="space-y-2">
+                      {savedAnalyses.map((analysis) => (
+                        <div key={analysis.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                          <div>
+                            <div className="font-medium text-gray-900">{analysis.analysis_name}</div>
+                            <div className="text-xs text-gray-500">
+                              Created {new Date(analysis.created_at).toLocaleDateString()} • 
+                              {analysis.overall_stats.analyzedShipments || 0} shipments analyzed
+                            </div>
+                          </div>
+                          <button
+                            onClick={() => loadSavedAnalysis(analysis.id)}
+                            className="flex items-center space-x-2 px-3 py-1 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors text-sm"
+                          >
+                            <BarChart3 className="h-3 w-3" />
+                            <span>View Analysis</span>
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
 
                 {/* Progress */}
                 {reprocessing && (

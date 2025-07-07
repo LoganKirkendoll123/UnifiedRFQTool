@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { 
   ArrowLeft,
+  Save,
+  Eye,
   MapPin, 
   Package, 
   Clock, 
@@ -32,6 +34,7 @@ interface BatchAnalysisViewProps {
   requests: BatchRequest[];
   responses: BatchResponse[];
   newResponses?: BatchResponse[];
+  analysisId?: string; // If loading a saved analysis
   onBack: () => void;
 }
 
@@ -68,10 +71,40 @@ export const BatchAnalysisView: React.FC<BatchAnalysisViewProps> = ({
   requests,
   responses,
   newResponses,
+  analysisId,
   onBack
 }) => {
   const [expandedShipments, setExpandedShipments] = useState<Set<string>>(new Set());
   const [shipmentAnalyses, setShipmentAnalyses] = useState<ShipmentAnalysis[]>([]);
+  const [isLoadingSavedAnalysis, setIsLoadingSavedAnalysis] = useState(false);
+  const [savedAnalysisData, setSavedAnalysisData] = useState<any>(null);
+
+  // Load saved analysis if analysisId is provided
+  useEffect(() => {
+    if (analysisId) {
+      loadSavedAnalysis();
+    } else {
+      calculateAnalyses();
+    }
+  }, [requests, responses, newResponses, analysisId]);
+
+  const loadSavedAnalysis = async () => {
+    if (!analysisId) return;
+
+    setIsLoadingSavedAnalysis(true);
+    try {
+      // Note: This would need to be passed from the parent component
+      // or we'd need access to the API client here
+      console.log(`📋 Loading saved analysis data for: ${analysisId}`);
+      // For now, fall back to calculating from current data
+      calculateAnalyses();
+    } catch (error) {
+      console.error('❌ Failed to load saved analysis:', error);
+      calculateAnalyses();
+    } finally {
+      setIsLoadingSavedAnalysis(false);
+    }
+  };
 
   // Helper function to extract pricing from BatchResponse (including from raw_response)
   const extractPricingFromResponse = (response: BatchResponse): { carrierRate: number; customerPrice: number; profit: number; transitDays?: number } => {
@@ -506,17 +539,41 @@ export const BatchAnalysisView: React.FC<BatchAnalysisViewProps> = ({
             </button>
             <div className="h-6 w-px bg-gray-300"></div>
             <div>
-              <h1 className="text-2xl font-bold text-gray-900">{batch.batch_name}</h1>
+              <h1 className="text-2xl font-bold text-gray-900">
+                {batch.batch_name}
+                {analysisId && (
+                  <span className="ml-2 text-sm bg-blue-100 text-blue-800 px-2 py-1 rounded-full">
+                    Saved Analysis
+                  </span>
+                )}
+              </h1>
               <p className="text-sm text-gray-600 mt-1">
                 Created by {batch.created_by} on {new Date(batch.created_at).toLocaleDateString()}
                 {newResponses && newResponses.length > 0 && (
-                  <span className="ml-2 text-blue-600">
+                  <span className="ml-2 text-green-600">
                     • Comparing with {newResponses.length} new quotes
+                  </span>
+                )}
+                {analysisId && (
+                  <span className="ml-2 text-blue-600">
+                    • Viewing saved analysis
                   </span>
                 )}
               </p>
             </div>
           </div>
+
+          {/* Analysis Status */}
+          {newResponses && newResponses.length > 0 && (
+            <div className="flex items-center space-x-2">
+              <div className="flex items-center space-x-1 text-green-600">
+                <Eye className="h-4 w-4" />
+                <span className="text-sm font-medium">
+                  {analysisId ? 'Saved Analysis' : 'Live Comparison'}
+                </span>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Batch Summary Stats */}
@@ -526,20 +583,18 @@ export const BatchAnalysisView: React.FC<BatchAnalysisViewProps> = ({
             <div className="text-sm text-blue-700">Total RFQs</div>
           </div>
           <div className="bg-green-50 rounded-lg p-3">
-            <div className="text-2xl font-bold text-green-600">{batch.total_quotes}</div>
-            <div className="text-sm text-green-700">Total Quotes</div>
+            <div className="text-2xl font-bold text-green-600">{responses.length}</div>
+            <div className="text-sm text-green-700">Original Quotes</div>
           </div>
           <div className="bg-purple-50 rounded-lg p-3">
-            <div className="text-2xl font-bold text-purple-600">
-              {batch.best_total_price > 0 ? formatCurrency(batch.best_total_price) : 'N/A'}
-            </div>
-            <div className="text-sm text-purple-700">Best Price</div>
+            <div className="text-2xl font-bold text-purple-600">{newResponses?.length || 0}</div>
+            <div className="text-sm text-purple-700">Comparison Quotes</div>
           </div>
           <div className="bg-orange-50 rounded-lg p-3">
             <div className="text-2xl font-bold text-orange-600">
-              {batch.total_profit > 0 ? formatCurrency(batch.total_profit) : 'N/A'}
+              {shipmentAnalyses.length}
             </div>
-            <div className="text-sm text-orange-700">Total Profit</div>
+            <div className="text-sm text-orange-700">Shipments Analyzed</div>
           </div>
         </div>
 

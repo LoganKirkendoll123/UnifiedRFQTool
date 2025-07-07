@@ -809,6 +809,81 @@ export class Project44APIClient {
     }
   }
 
+  // Batch Analysis Methods
+  async createBatchAnalysis(
+    originalBatchId: string,
+    comparisonBatchId: string,
+    analysisName: string,
+    analysisSettings: any,
+    overallStats: any,
+    shipmentAnalyses: any[]
+  ): Promise<string> {
+    try {
+      const { data, error } = await supabase
+        .from('batch_analyses')
+        .insert({
+          original_batch_id: originalBatchId,
+          comparison_batch_id: comparisonBatchId,
+          analysis_name: analysisName,
+          analysis_settings: analysisSettings,
+          overall_stats: overallStats,
+          shipment_analyses: shipmentAnalyses,
+          created_by: 'user'
+        })
+        .select('id')
+        .single();
+
+      if (error) throw error;
+      
+      console.log(`✅ Created batch analysis: ${data.id}`);
+      return data.id;
+    } catch (error) {
+      console.error('❌ Failed to create batch analysis:', error);
+      throw error;
+    }
+  }
+
+  async getBatchAnalysis(analysisId: string): Promise<any> {
+    try {
+      const { data, error } = await supabase
+        .from('batch_analyses')
+        .select('*')
+        .eq('id', analysisId)
+        .single();
+
+      if (error) throw error;
+      
+      console.log(`✅ Retrieved batch analysis: ${analysisId}`);
+      return data;
+    } catch (error) {
+      console.error('❌ Failed to get batch analysis:', error);
+      throw error;
+    }
+  }
+
+  async getBatchAnalyses(originalBatchId?: string): Promise<any[]> {
+    try {
+      let query = supabase
+        .from('batch_analyses')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (originalBatchId) {
+        query = query.eq('original_batch_id', originalBatchId);
+      }
+
+      const { data, error } = await query;
+
+      if (error) throw error;
+      
+      console.log(`✅ Retrieved ${data.length} batch analyses`);
+      return data || [];
+    } catch (error) {
+      console.error('❌ Failed to get batch analyses:', error);
+      throw error;
+    }
+  }
+
   async saveRequest(
     batchId: string,
     rfq: RFQRow,

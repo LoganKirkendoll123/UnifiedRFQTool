@@ -38,53 +38,65 @@ export const CustomerSelection: React.FC<CustomerSelectionProps> = ({
     setError('');
     
     try {
-      // Get unique customers from the Shipments table
-      const { data, error } = await supabase
-        .from('Shipments')
-        .select('Customer')
-        .not('Customer', 'is', null)
-        .order('Customer');
-      // Load all customers without any limits
-      let allCustomers: any[] = [];
-      let from = 0;
-      const batchSize = 1000;
-      let hasMore = true;
-      
-      while (hasMore) {
-        const { data, error } = await supabase
-          .from('CustomerCarriers')
-          .select('InternalName')
-          .not('InternalName', 'is', null)
-          .range(from, from + batchSize - 1);
-        
-        if (error) {
-          throw error;
-        }
-        
-        if (data && data.length > 0) {
-          allCustomers = [...allCustomers, ...data];
-          from += batchSize;
-          hasMore = data.length === batchSize; // Continue if we got a full batch
-          console.log(`📋 Loaded batch: ${data.length} customers (total: ${allCustomers.length})`);
-        } else {
-          hasMore = false;
-        }
+      // First check if Supabase is properly configured
+      const connectionCheck = await checkSupabaseConnection();
+      if (!connectionCheck.connected) {
+        throw new Error(connectionCheck.error || 'Unable to connect to database');
       }
 
-      // Get unique customer names
-      const uniqueCustomers = [...new Set(allCustomers?.map(d => d.InternalName).filter(Boolean))].sort();
+      // Try to get customers from CustomerCarriers table first (has InternalName field)
+      let uniqueCustomers: string[] = [];
+      
+      try {
+        const { data: carrierData, error: carrierError } = await supabase
+          .from('CustomerCarriers')
+          .select('InternalName')
+          .not('InternalName', 'is', null);
+        
+        if (!carrierError && carrierData) {
+          uniqueCustomers = [...new Set(carrierData.map(d => d.InternalName).filter(Boolean))];
+          console.log(`✅ Loaded ${uniqueCustomers.length} customers from CustomerCarriers`);
+        }
+      } catch (carrierErr) {
+        console.warn('⚠️ Could not load from CustomerCarriers, trying Shipments table');
+      }
+      
+      // If CustomerCarriers didn't work or returned no data, try Shipments table
+      if (uniqueCustomers.length === 0) {
+        const { data: shipmentData, error: shipmentError } = await supabase
+          .from('Shipments')
+          .select('Customer')
+          .not('Customer', 'is', null);
+        
+        if (shipmentError) {
+          throw shipmentError;
+        }
+        
+        if (shipmentData) {
+          uniqueCustomers = [...new Set(shipmentData.map(d => d.Customer).filter(Boolean))];
+          console.log(`✅ Loaded ${uniqueCustomers.length} customers from Shipments`);
+        }
+      }
+      
+      // Sort the customers alphabetically
+      uniqueCustomers.sort();
       setCustomers(uniqueCustomers);
       setFilteredCustomers(uniqueCustomers);
-      console.log(`✅ Loaded ${uniqueCustomers.length} unique customers from ${allCustomers.length} total records`);
+      
+      if (uniqueCustomers.length === 0) {
+        setError('No customers found in the database');
+      }
     } catch (err) {
       let errorMsg = 'Failed to load customers';
       if (err instanceof Error) {
         if (err.message.includes('Failed to fetch') || err.message.includes('fetch')) {
-          errorMsg = 'Unable to connect to database. Please check your Supabase configuration.';
+          errorMsg = 'Unable to connect to database. Please check your Supabase configuration and ensure the database is accessible.';
         } else if (err.message.includes('JWT') || err.message.includes('Invalid API key')) {
           errorMsg = 'Invalid Supabase credentials. Please check your API key.';
         } else if (err.message.includes('permission') || err.message.includes('policy')) {
-          errorMsg = 'Database access denied. Please check your row-level security policies.';
+          errorMsg = 'Database access denied. Please check your database permissions and row-level security policies.';
+        } else if (err.message.includes('relation') || err.message.includes('does not exist')) {
+          errorMsg = 'Database tables not found. Please ensure your database schema is properly set up.';
         } else {
           errorMsg = err.message;
         }
@@ -157,15 +169,24 @@ export const CustomerSelection: React.FC<CustomerSelectionProps> = ({
                   Loading customers...
                 </div>
               ) : error ? (
-                <div className="p-4 text-center text-red-600">
-                  <AlertCircle className="h-4 w-4" />
-                  <div className="text-sm">
+                <div className="p-4 text-center">
+                  <div className="flex items-center justify-center mb-2 text-red-600">
+                    <AlertCircle className="h-4 w-4 mr-1" />
+                    <span className="text-sm font-medium">Error Loading Customers</span>
+                  </div>
+                  <div className="text-xs text-red-600">
                     <p className="font-medium mb-1">{error}</p>
-                    {error.includes('Supabase') && (
-                      <p className="text-xs text-red-500">
+                    {(error.includes('Supabase') || error.includes('configuration')) && (
+                      <p className="text-red-500 mt-2">
                         Click "Connect to Supabase" in the top right to set up your database connection.
                       </p>
                     )}
+                    <button
+                      onClick={loadCustomers}
+                      className="mt-2 px-3 py-1 text-xs bg-red-100 text-red-700 rounded hover:bg-red-200 transition-colors"
+                    >
+                      Retry
+                    </button>
                   </div>
                 </div>
               ) : filteredCustomers.length === 0 ? (
@@ -222,7 +243,7 @@ export const CustomerSelection: React.FC<CustomerSelectionProps> = ({
 
       {customers.length > 0 && (
         <p className="mt-2 text-xs text-gray-500">
-          {customers.length} customer{customers.length !== 1 ? 's' : ''} available from CustomerCarriers database
+          {customers.length} customer{customers.length !== 1 ? 's' : ''} available
         </p>
       )}
     </div>

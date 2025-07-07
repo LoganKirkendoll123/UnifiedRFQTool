@@ -268,11 +268,21 @@ export const UnifiedRFQTool: React.FC<UnifiedRFQToolProps> = ({
   
   const loadPastRFQData = async (batchId: string) => {
     try {
-      const batch = await loadRFQBatch(batchId);
+      console.log('📥 Loading past RFQ data from relational structure:', batchId);
       
-      if (batch && batch.rfq_data) {
-        setPastRFQData(batch.rfq_data);
+      // Load the batch data using the existing utility function
+      const batchData = await loadRFQBatch(batchId);
+      
+      if (!batchData) {
+        throw new Error('Batch not found');
       }
+      
+      if (!batchData.rfq_data || batchData.rfq_data.length === 0) {
+        throw new Error('No RFQ data found in this batch');
+      }
+      
+      console.log('✅ Past RFQ data loaded successfully from relational structure');
+      return batchData.rfq_data;
     } catch (error) {
       console.error('Failed to load past RFQ data:', error);
     }
@@ -515,33 +525,43 @@ export const UnifiedRFQTool: React.FC<UnifiedRFQToolProps> = ({
 
   const handleSelectPastRFQ = async (batchId: string) => {
     try {
-      console.log('📥 Loading past RFQ batch:', batchId);
+      console.log('🔄 Loading past RFQ batch:', batchId);
       
-      const batch = await loadRFQBatch(batchId);
-      if (!batch) {
+      // Load the complete batch data
+      const batchData = await loadRFQBatch(batchId);
+      
+      if (!batchData) {
         alert('Failed to load the selected RFQ batch.');
         return;
       }
       
       // Load the RFQ data
-      setRfqData(batch.rfq_data);
+      setRfqData(batchData.rfq_data);
+      setPricingSettings(batchData.pricing_settings);
+      setSelectedCustomer(batchData.customer_name || '');
       
-      // Load the pricing settings
-      setPricingSettings(batch.pricing_settings);
-      
-      // Load the customer selection
-      if (batch.customer_name) {
-        setSelectedCustomer(batch.customer_name);
+      // Determine carriers from the batch's selected_carriers
+      if (batchData.selected_carriers && Object.keys(batchData.selected_carriers).length > 0) {
+        console.log('🎯 Setting carriers from past batch:', Object.keys(batchData.selected_carriers).filter(id => batchData.selected_carriers[id]));
+        carrierManagement.setSelectedCarriers(batchData.selected_carriers);
+      } else {
+        console.log('ℹ️ No specific carriers found in past batch, keeping current selection');
       }
       
-      // Load the carrier selection
-      carrierManagement.setSelectedCarriers(batch.selected_carriers);
+      // Determine customer from the batch's customer_name
+      if (batchData.customer_name) {
+        console.log('👤 Setting customer from past batch:', batchData.customer_name);
+        setSelectedCustomer(batchData.customer_name);
+        handleCustomerChange(batchData.customer_name);
+      } else {
+        console.log('ℹ️ No specific customer found in past batch, keeping current selection');
+      }
       
-      // Load previous results if available
-      if (batch.results_data && batch.results_data.length > 0) {
+      // Load past results if available
+      if (batchData.results_data && Array.isArray(batchData.results_data)) {
         rfqProcessor.clearResults();
         // Set results directly in the processor
-        (rfqProcessor as any).results = batch.results_data;
+        (rfqProcessor as any).results = batchData.results_data;
       }
       
       // Set current batch ID for updates
@@ -550,7 +570,7 @@ export const UnifiedRFQTool: React.FC<UnifiedRFQToolProps> = ({
       setShowPastRFQSelector(false);
       setFileError('');
       
-      console.log('✅ Past RFQ batch loaded successfully');
+      console.log('✅ Past RFQ batch loaded successfully with carriers and customer');
     } catch (error) {
       console.error('❌ Failed to load past RFQ batch:', error);
       alert('Failed to load the selected RFQ batch. Please try again.');

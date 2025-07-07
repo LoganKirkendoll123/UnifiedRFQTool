@@ -30,6 +30,7 @@ interface PastBatchManagerProps {
   pricingSettings: PricingSettings;
   selectedCustomer: string;
   onBatchSettingsLoad?: (customer: string, carriers: { [carrierId: string]: boolean }, pricingSettings: PricingSettings) => void;
+  onBatchSettingsLoad?: (customer: string, carriers: { [carrierId: string]: boolean }, pricingSettings: PricingSettings) => void;
 }
 
 export const PastBatchManager: React.FC<PastBatchManagerProps> = ({
@@ -38,6 +39,7 @@ export const PastBatchManager: React.FC<PastBatchManagerProps> = ({
   onClose,
   pricingSettings,
   selectedCustomer
+  onBatchSettingsLoad
   onBatchSettingsLoad
 }) => {
   const [batches, setBatches] = useState<BatchData[]>([]);
@@ -92,6 +94,21 @@ export const PastBatchManager: React.FC<PastBatchManagerProps> = ({
       setBatchRequests(requests);
       setOriginalResponses(responses);
       setNewResponses([]); // Clear any previous new responses
+      
+      // Auto-load batch settings when a batch is selected
+      if (onBatchSettingsLoad) {
+        const batchCustomer = batch.customer_name || '';
+        const batchCarriers = batch.selected_carriers || {};
+        const batchPricingSettings = batch.pricing_settings || pricingSettings;
+        
+        console.log(`🔄 Auto-loading batch settings:`, {
+          customer: batchCustomer,
+          carriers: Object.keys(batchCarriers).length,
+          pricingSettings: batchPricingSettings
+        });
+        
+        onBatchSettingsLoad(batchCustomer, batchCarriers, batchPricingSettings);
+      }
       
       // Auto-load batch settings when a batch is selected
       if (onBatchSettingsLoad) {
@@ -414,6 +431,13 @@ export const PastBatchManager: React.FC<PastBatchManagerProps> = ({
 
                   {/* Action Buttons */}
                   <div className="flex items-center space-x-3">
+                    <div className="text-xs text-gray-600 bg-blue-50 px-3 py-2 rounded-lg">
+                      <div className="font-medium text-blue-900 mb-1">Reprocessing Configuration:</div>
+                      <div>• Customer: {selectedBatch.customer_name || 'None'}</div>
+                      <div>• Carriers: {Object.keys(selectedBatch.selected_carriers || {}).length} selected</div>
+                      <div>• Original pricing settings loaded</div>
+                    </div>
+                    
                     <div className="text-xs text-gray-600 bg-blue-50 px-3 py-2 rounded-lg">
                       <div className="font-medium text-blue-900">Reprocessing will use:</div>
                       <div>Customer: {selectedBatch.customer_name || 'None'}</div>

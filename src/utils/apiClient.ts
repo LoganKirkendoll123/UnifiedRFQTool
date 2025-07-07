@@ -41,8 +41,8 @@ export interface RFQBatch {
   id: string;
   batch_name: string;
   customer_name?: string;
-  pricing_settings: any;
-  selected_carriers: any;
+  pricing_settings: PricingSettings;
+  selected_carriers: { [carrierId: string]: boolean };
   processing_mode: string;
   total_rfqs: number;
   successful_rfqs: number;
@@ -99,8 +99,8 @@ export interface BatchData {
   id: string;
   batch_name: string;
   customer_name?: string;
-  pricing_settings: any;
-  selected_carriers: any;
+  pricing_settings: PricingSettings;
+  selected_carriers: { [carrierId: string]: boolean };
   processing_mode: string;
   total_rfqs: number;
   successful_rfqs: number;

@@ -1426,6 +1426,35 @@ export const UnifiedRFQTool: React.FC<UnifiedRFQToolProps> = ({
           <CustomerSelection
             selectedCustomer={selectedCustomer}
             onBatchSettingsLoad={(customer, carriers, batchPricingSettings) => {
+              console.log('🔄 Loading batch settings into UI:', { 
+                customer, 
+                carriers: Object.keys(carriers).length, 
+                batchPricingSettings 
+              });
+              
+              // Auto-load customer
+              setSelectedCustomer(customer);
+              
+              // Auto-load carriers  
+              carrierManagement.setSelectedCarriers(carriers);
+              
+              // Auto-load pricing settings
+              setPricingSettings(batchPricingSettings);
+              
+              // Save the loaded settings to localStorage
+              if (Object.keys(carriers).length > 0) {
+                saveSelectedCarriers(carriers);
+                console.log(`✅ Auto-loaded ${Object.keys(carriers).length} carriers`);
+              }
+              savePricingSettings(batchPricingSettings);
+              
+              if (customer) {
+                console.log(`✅ Auto-loaded customer: ${customer}`);
+              }
+              
+              console.log(`✅ Auto-loaded pricing settings for batch reprocessing`);
+            }}
+            onBatchSettingsLoad={(customer, carriers, batchPricingSettings) => {
               console.log('🔄 Loading batch settings into UI:', { customer, carriers: Object.keys(carriers).length, batchPricingSettings });
               
               // Auto-load customer

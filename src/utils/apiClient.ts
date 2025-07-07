@@ -8,7 +8,6 @@ import {
   CapacityProvider,
   CapacityProviderIdentifier,
   LineItem,
-import { saveRFQRequest } from './rfqStorage';
   AccessorialService,
   TimeWindow,
   Address,
@@ -19,6 +18,7 @@ import { saveRFQRequest } from './rfqStorage';
   Contact,
   HazmatDetail
 } from '../types';
+import { saveRFQRequest } from './rfqStorage';
 
 // Carrier group interface for organizing carriers
 export interface CarrierGroup {

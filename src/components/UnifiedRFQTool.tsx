@@ -1425,6 +1425,31 @@ export const UnifiedRFQTool: React.FC<UnifiedRFQToolProps> = ({
           
           <CustomerSelection
             selectedCustomer={selectedCustomer}
+            onBatchSettingsLoad={(customer, carriers, batchPricingSettings) => {
+              console.log('🔄 Loading batch settings into UI:', { customer, carriers: Object.keys(carriers).length, batchPricingSettings });
+              
+              // Auto-load customer
+              setSelectedCustomer(customer);
+              
+              // Auto-load carriers
+              carrierManagement.setSelectedCarriers(carriers);
+              
+              // Auto-load pricing settings
+              setPricingSettings(batchPricingSettings);
+              
+              // Save the loaded settings
+              if (customer) {
+                console.log(`✅ Auto-loaded customer: ${customer}`);
+              }
+              if (Object.keys(carriers).length > 0) {
+                console.log(`✅ Auto-loaded ${Object.keys(carriers).length} carriers`);
+                saveSelectedCarriers(carriers);
+              }
+              savePricingSettings(batchPricingSettings);
+              
+              // Show confirmation to user
+              alert(`Loaded batch settings:\n• Customer: ${customer || 'None'}\n• Carriers: ${Object.keys(carriers).length} selected\n• Pricing settings: Updated`);
+            }}
             onCustomerChange={updateSelectedCustomer}
           />
         </div>

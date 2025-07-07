@@ -74,24 +74,54 @@ export const BatchAnalysisView: React.FC<BatchAnalysisViewProps> = ({
   const [analysisMode, setAnalysisMode] = useState<'overview' | 'detailed' | 'recommendations'>('overview');
   const [shipmentAnalyses, setShipmentAnalyses] = useState<ShipmentAnalysis[]>([]);
 
+  // Helper function to extract pricing from BatchResponse (including from raw_response)
+  const extractPricingFromResponse = (response: BatchResponse): { carrierRate: number; customerPrice: number; profit: number; transitDays?: number } => {
+    let carrierTotalRate = response.carrier_total_rate || 0;
+    let customerPrice = response.customer_price || 0;
+    let profit = response.profit || 0;
+    let transitDays = response.transit_days || undefined;
+    
+    if (response.raw_response) {
+      // Extract from Project44 raw response if database values are missing
+      if (response.raw_response.rateQuoteDetail?.total && carrierTotalRate <= 0) {
+        carrierTotalRate = response.raw_response.rateQuoteDetail.total;
+      }
+      
+      // Extract transit days from raw response if not in database
+      if (!transitDays && response.raw_response.transitDays) {
+        transitDays = response.raw_response.transitDays;
+      }
+      
+      // Calculate customer price if not available
+      if (customerPrice <= 0 && carrierTotalRate > 0) {
+        // Use applied margin percentage if available, otherwise 20% default
+        const marginPercent = response.applied_margin_percentage || 20;
+        customerPrice = carrierTotalRate / (1 - marginPercent / 100);
+        profit = customerPrice - carrierTotalRate;
+      }
+    }
+    
+    return {
+      carrierRate: carrierTotalRate,
+      customerPrice,
+      profit,
+      transitDays
+    };
+  };
   // Convert BatchResponse to QuoteWithPricing format for CarrierCards
   const convertBatchResponseToQuote = (response: BatchResponse): QuoteWithPricing => {
     const relatedRequest = requests.find(r => r.id === response.request_id);
     
-    // Extract pricing from raw_response if available, fallback to database fields
-    let carrierTotalRate = response.carrier_total_rate || 0;
-    let customerPrice = response.customer_price || 0;
-    let profit = response.profit || 0;
+    // Use the helper function to extract pricing
+    const extractedPricing = extractPricingFromResponse(response);
+    let carrierTotalRate = extractedPricing.carrierRate;
+    let customerPrice = extractedPricing.customerPrice;
+    let profit = extractedPricing.profit;
     let baseRate = 0;
     let fuelSurcharge = 0;
     let premiumsAndDiscounts = 0;
     
     if (response.raw_response) {
-      // Extract from Project44 raw response
-      if (response.raw_response.rateQuoteDetail?.total && carrierTotalRate <= 0) {
-        carrierTotalRate = response.raw_response.rateQuoteDetail.total;
-      }
-      
       // Extract individual charges for better display
       if (response.raw_response.rateQuoteDetail?.charges) {
         const charges = response.raw_response.rateQuoteDetail.charges;
@@ -119,14 +149,6 @@ export const BatchAnalysisView: React.FC<BatchAnalysisViewProps> = ({
         baseRate = carrierTotalRate * 0.7;
         fuelSurcharge = carrierTotalRate * 0.2;
         premiumsAndDiscounts = carrierTotalRate * 0.1;
-      }
-      
-      // Calculate customer price if not available
-      if (customerPrice <= 0 && carrierTotalRate > 0) {
-        // Use applied margin percentage if available, otherwise 20% default
-        const marginPercent = response.applied_margin_percentage || 20;
-        customerPrice = carrierTotalRate / (1 - marginPercent / 100);
-        profit = customerPrice - carrierTotalRate;
       }
     }
     
@@ -201,7 +223,7 @@ export const BatchAnalysisView: React.FC<BatchAnalysisViewProps> = ({
         code: response.service_level_code,
         description: response.service_level_description || ''
       } : undefined,
-      transitDays: response.transit_days,
+      transitDays: extractedPricing.transitDays,
       carrierCode: response.carrier_code,
       id: response.id
     };
@@ -216,12 +238,13 @@ export const BatchAnalysisView: React.FC<BatchAnalysisViewProps> = ({
       const originalQuotes = responses.filter(r => r.request_id === request.id);
       const newQuotes = newResponses?.filter(r => r.request_id === request.id) || [];
       
+      // Use the helper function to get actual pricing instead of raw database values
       const originalBestPrice = originalQuotes.length > 0 
-        ? Math.min(...originalQuotes.map(q => q.customer_price)) 
+        ? Math.min(...originalQuotes.map(q => extractPricingFromResponse(q).customerPrice)) 
         : 0;
       
       const newBestPrice = newQuotes.length > 0 
-        ? Math.min(...newQuotes.map(q => q.customer_price)) 
+        ? Math.min(...newQuotes.map(q => extractPricingFromResponse(q).customerPrice)) 
         : undefined;
       
       const costDifference = newBestPrice !== undefined ? newBestPrice - originalBestPrice : undefined;

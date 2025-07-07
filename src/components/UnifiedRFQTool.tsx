@@ -43,6 +43,13 @@ import { FileUpload } from './FileUpload';
 import { parseCSV, parseXLSX } from '../utils/fileParser';
 import { useRFQProcessor } from '../hooks/useRFQProcessor';
 import { useCarrierManagement } from '../hooks/useCarrierManagement';
+import { PastRFQSelector } from './PastRFQSelector';
+import { 
+  saveRFQBatch, 
+  loadRFQBatch, 
+  generateBatchName,
+  updateRFQBatch 
+} from '../utils/rfqStorage';
 import { supabase } from '../utils/supabase';
 import * as XLSX from 'xlsx';
 
@@ -139,6 +146,10 @@ export const UnifiedRFQTool: React.FC<UnifiedRFQToolProps> = ({
   const [isSaving, setIsSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [formError, setFormError] = useState<string>('');
+  const [showPastRFQSelector, setShowPastRFQSelector] = useState(false);
+  const [currentBatchId, setCurrentBatchId] = useState<string | null>(null);
+  const [lastSavedBatchName, setLastSavedBatchName] = useState<string>('');
+  const [showSaveSuccess, setShowSaveSuccess] = useState(false);
   
   // Local state for pricing settings and customer selection
   const [pricingSettings, setPricingSettings] = useState<PricingSettings>(initialPricingSettings);
@@ -287,6 +298,7 @@ export const UnifiedRFQTool: React.FC<UnifiedRFQToolProps> = ({
       
       // Reset results when new file is loaded
       rfqProcessor.clearResults();
+      setCurrentBatchId(null); // Clear current batch when new file is uploaded
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Failed to parse file';
       setFileError(errorMessage);
@@ -460,6 +472,91 @@ export const UnifiedRFQTool: React.FC<UnifiedRFQToolProps> = ({
         pricingSettings,
         selectedCustomer: customers[0] || '' // Use first customer or empty string
       });
+      
+      // Automatically save results to database
+      await saveResultsToDatabase(rfqProcessor.results);
+    }
+  };
+  
+  const saveResultsToDatabase = async (results: any[]) => {
+    try {
+      const batchName = generateBatchName(rfqData, selectedCustomer);
+      
+      if (currentBatchId) {
+        // Update existing batch
+        await updateRFQBatch(
+          currentBatchId,
+          results,
+          pricingSettings,
+          carrierManagement.selectedCarriers,
+          selectedCustomer
+        );
+        console.log('✅ Updated existing RFQ batch:', currentBatchId);
+      } else {
+        // Save new batch
+        const batchId = await saveRFQBatch(
+          batchName,
+          rfqData,
+          results,
+          pricingSettings,
+          carrierManagement.selectedCarriers,
+          selectedCustomer,
+          'smart'
+        );
+        setCurrentBatchId(batchId);
+        console.log('✅ Saved new RFQ batch:', batchId);
+      }
+      
+      setLastSavedBatchName(batchName);
+      setShowSaveSuccess(true);
+      setTimeout(() => setShowSaveSuccess(false), 3000);
+    } catch (error) {
+      console.error('❌ Failed to save results to database:', error);
+      // Don't throw error - processing was successful, just saving failed
+    }
+  };
+
+  const handleSelectPastRFQ = async (batchId: string) => {
+    try {
+      console.log('📥 Loading past RFQ batch:', batchId);
+      
+      const batch = await loadRFQBatch(batchId);
+      if (!batch) {
+        alert('Failed to load the selected RFQ batch.');
+        return;
+      }
+      
+      // Load the RFQ data
+      setRfqData(batch.rfq_data);
+      
+      // Load the pricing settings
+      setPricingSettings(batch.pricing_settings);
+      
+      // Load the customer selection
+      if (batch.customer_name) {
+        setSelectedCustomer(batch.customer_name);
+      }
+      
+      // Load the carrier selection
+      carrierManagement.setSelectedCarriers(batch.selected_carriers);
+      
+      // Load previous results if available
+      if (batch.results_data && batch.results_data.length > 0) {
+        rfqProcessor.clearResults();
+        // Set results directly in the processor
+        (rfqProcessor as any).results = batch.results_data;
+      }
+      
+      // Set current batch ID for updates
+      setCurrentBatchId(batchId);
+      
+      setShowPastRFQSelector(false);
+      setFileError('');
+      
+      console.log('✅ Past RFQ batch loaded successfully');
+    } catch (error) {
+      console.error('❌ Failed to load past RFQ batch:', error);
+      alert('Failed to load the selected RFQ batch. Please try again.');
     }
   };
   
@@ -1532,27 +1629,37 @@ export const UnifiedRFQTool: React.FC<UnifiedRFQToolProps> = ({
     
     return (
       <div className="bg-white rounded-lg shadow-md p-6 text-center">
-        <button
-          onClick={processRFQs}
-          disabled={!isReadyToProcess() || rfqProcessor.processingStatus.isProcessing}
-          className={`inline-flex items-center space-x-3 px-8 py-4 font-semibold rounded-xl transition-all duration-200 text-lg shadow-lg ${
-            !isReadyToProcess() || rfqProcessor.processingStatus.isProcessing
-              ? 'bg-gray-400 cursor-not-allowed text-white'
-              : 'bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white hover:shadow-xl'
-          }`}
-        >
-          {rfqProcessor.processingStatus.isProcessing ? (
-            <>
-              <Loader className="h-6 w-6 animate-spin" />
-              <span>Processing...</span>
-            </>
-          ) : (
-            <>
-              <Zap className="h-6 w-6" />
-              <span>{getButtonText()}</span>
-            </>
-          )}
-        </button>
+        <div className="flex items-center space-x-4">
+          <button
+            onClick={processRFQs}
+            disabled={!isReadyToProcess() || rfqProcessor.processingStatus.isProcessing}
+            className={`inline-flex items-center space-x-3 px-8 py-4 font-semibold rounded-xl transition-all duration-200 text-lg shadow-lg ${
+              !isReadyToProcess() || rfqProcessor.processingStatus.isProcessing
+                ? 'bg-gray-400 cursor-not-allowed text-white'
+                : 'bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white hover:shadow-xl'
+            }`}
+          >
+            {rfqProcessor.processingStatus.isProcessing ? (
+              <>
+                <Loader className="h-6 w-6 animate-spin" />
+                <span>Processing...</span>
+              </>
+            ) : (
+              <>
+                <Zap className="h-6 w-6" />
+                <span>{getButtonText()}</span>
+              </>
+            )}
+          </button>
+          
+          <button
+            onClick={() => setShowPastRFQSelector(true)}
+            className="flex items-center space-x-2 px-4 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+          >
+            <History className="h-5 w-5" />
+            <span>Run from Past RFQ</span>
+          </button>
+        </div>
         
         <p className="mt-3 text-sm text-gray-500">
           {rfqProcessor.processingStatus.isProcessing
@@ -1703,6 +1810,21 @@ export const UnifiedRFQTool: React.FC<UnifiedRFQToolProps> = ({
         {renderProcessButton()}
       </div>
       
+      {/* Save Success Notification */}
+      {showSaveSuccess && (
+        <div className="fixed top-4 right-4 z-50 bg-green-600 text-white px-6 py-3 rounded-lg shadow-lg flex items-center space-x-2">
+          <CheckCircle className="h-5 w-5" />
+          <span>Saved: {lastSavedBatchName}</span>
+        </div>
+      )}
+
+      {/* Past RFQ Selector Modal */}
+      <PastRFQSelector
+        isVisible={showPastRFQSelector}
+        onSelectBatch={handleSelectPastRFQ}
+        onClose={() => setShowPastRFQSelector(false)}
+      />
+
       {/* Results Section */}
       {renderResults()}
       

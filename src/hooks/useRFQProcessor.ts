@@ -156,6 +156,10 @@ export const useRFQProcessor = ({ project44Client, freshxClient }: UseRFQProcess
     });
   }, []);
 
+  // Set results directly (for loading past RFQs)
+  const setResults = useCallback((newResults: SmartQuotingResult[]) => {
+    setResults(newResults);
+  }, []);
   // Clear error
   const clearError = useCallback(() => {
     setProcessingStatus(prev => ({ ...prev, error: undefined }));
@@ -163,6 +167,7 @@ export const useRFQProcessor = ({ project44Client, freshxClient }: UseRFQProcess
 
   return {
     results,
+    setResults,
     processingStatus,
     processSingleRFQ,
     processMultipleRFQs,

@@ -1,6 +1,14 @@
 import { RFQRow, ProcessingResult, QuoteWithPricing, PricingSettings } from '../types';
 import { Project44APIClient, FreshXAPIClient } from './apiClient';
 import { calculatePricingWithCustomerMargins } from './pricingCalculator';
+import { 
+  createRFQBatch, 
+  saveRFQRequest, 
+  linkRequestToBatch, 
+  saveRFQResponse, 
+  updateBatchRequestStatus,
+  updateBatchStatistics
+} from './rfqStorage';
 
 export interface RFQProcessingOptions {
   selectedCarriers: { [carrierId: string]: boolean };
@@ -8,6 +16,7 @@ export interface RFQProcessingOptions {
   selectedCustomer: string;
   onProgress?: (current: number, total: number, currentItem?: string) => void;
   onCarrierProgress?: (current: number, total: number) => void;
+  batchId?: string; // Optional batch ID for saving to database
 }
 
 export interface SmartQuotingResult extends ProcessingResult {
@@ -53,7 +62,8 @@ export class RFQProcessor {
   async processSingleRFQ(
     rfq: RFQRow,
     options: RFQProcessingOptions,
-    rowIndex: number = 0
+    rowIndex: number = 0,
+    autoSave: boolean = false
   ): Promise<SmartQuotingResult> {
     const selectedCarrierIds = Object.entries(options.selectedCarriers)
       .filter(([_, selected]) => selected)
@@ -73,6 +83,22 @@ export class RFQProcessor {
       quotingReason: classification.reason
     };
 
+    // Save request to database if autoSave is enabled and we have a batchId
+    let requestId: string | null = null;
+    if (autoSave && options.batchId) {
+      try {
+        requestId = await saveRFQRequest(
+          rfq,
+          classification.quoting,
+          classification.reason
+        );
+        
+        await linkRequestToBatch(options.batchId, requestId, rowIndex, 'processing');
+        console.log(`💾 Saved RFQ request ${rowIndex + 1} to database`);
+      } catch (error) {
+        console.error(`❌ Failed to save RFQ request ${rowIndex + 1}:`, error);
+      }
+    }
     try {
       let quotes: any[] = [];
 
@@ -118,6 +144,19 @@ export class RFQProcessor {
         
         result.quotes = quotesWithPricing;
         result.status = 'success';
+        
+        // Save responses to database if autoSave is enabled
+        if (autoSave && options.batchId && requestId) {
+          try {
+            for (const quote of quotesWithPricing) {
+              await saveRFQResponse(requestId, options.batchId, quote);
+            }
+            console.log(`💾 Saved ${quotesWithPricing.length} responses for RFQ ${rowIndex + 1}`);
+          } catch (error) {
+            console.error(`❌ Failed to save responses for RFQ ${rowIndex + 1}:`, error);
+          }
+        }
+        
         console.log(`✅ ${classification.quoting.toUpperCase()} RFQ ${rowIndex + 1} completed: ${quotes.length} quotes received`);
       } else {
         result.status = 'success'; // No error, just no quotes
@@ -129,13 +168,23 @@ export class RFQProcessor {
       console.error(`❌ ${classification.quoting.toUpperCase()} RFQ ${rowIndex + 1} failed:`, error);
     }
 
+    // Update request status in database if autoSave is enabled
+    if (autoSave && options.batchId && requestId) {
+      try {
+        await updateBatchRequestStatus(options.batchId, requestId, result.status, result.error);
+        console.log(`📊 Updated status for RFQ ${rowIndex + 1}: ${result.status}`);
+      } catch (error) {
+        console.error(`❌ Failed to update status for RFQ ${rowIndex + 1}:`, error);
+      }
+    }
     return result;
   }
 
   // Process multiple RFQs with progress tracking
   async processMultipleRFQs(
     rfqs: RFQRow[],
-    options: RFQProcessingOptions
+    options: RFQProcessingOptions,
+    autoSave: boolean = false
   ): Promise<SmartQuotingResult[]> {
     if (rfqs.length === 0) {
       console.log('⚠️ No RFQ data to process');
@@ -155,13 +204,22 @@ export class RFQProcessor {
         options.onProgress(i + 1, rfqs.length, `RFQ ${i + 1}: ${classification.quoting.toUpperCase()}`);
       }
 
-      const result = await this.processSingleRFQ(rfq, options, i);
+      const result = await this.processSingleRFQ(rfq, options, i, autoSave);
       allResults.push(result);
 
       // Small delay between requests
       await new Promise(resolve => setTimeout(resolve, 100));
     }
 
+    // Update final batch statistics if autoSave is enabled
+    if (autoSave && options.batchId) {
+      try {
+        await updateBatchStatistics(options.batchId);
+        console.log('📊 Updated final batch statistics');
+      } catch (error) {
+        console.error('❌ Failed to update final batch statistics:', error);
+      }
+    }
     console.log(`🏁 Smart Quoting processing completed: ${allResults.length} total results`);
     return allResults;
   }
@@ -170,7 +228,8 @@ export class RFQProcessor {
   async processRFQsForAccountGroup(
     rfqs: RFQRow[],
     accountGroupCode: string,
-    options: Omit<RFQProcessingOptions, 'selectedCarriers'>
+    options: Omit<RFQProcessingOptions, 'selectedCarriers'>,
+    autoSave: boolean = false
   ): Promise<SmartQuotingResult[]> {
     if (!this.project44Client) {
       throw new Error('Project44 client not available');
@@ -200,6 +259,22 @@ export class RFQProcessor {
         quotingReason: classification.reason
       };
 
+      // Save request to database if autoSave is enabled and we have a batchId
+      let requestId: string | null = null;
+      if (autoSave && options.batchId) {
+        try {
+          requestId = await saveRFQRequest(
+            rfq,
+            classification.quoting,
+            classification.reason
+          );
+          
+          await linkRequestToBatch(options.batchId, requestId, i, 'processing');
+          console.log(`💾 Saved account group RFQ request ${i + 1} to database`);
+        } catch (error) {
+          console.error(`❌ Failed to save account group RFQ request ${i + 1}:`, error);
+        }
+      }
       try {
         let quotes: any[] = [];
 
@@ -238,6 +313,18 @@ export class RFQProcessor {
           
           result.quotes = quotesWithPricing;
           result.status = 'success';
+          
+          // Save responses to database if autoSave is enabled
+          if (autoSave && options.batchId && requestId) {
+            try {
+              for (const quote of quotesWithPricing) {
+                await saveRFQResponse(requestId, options.batchId, quote);
+              }
+              console.log(`💾 Saved ${quotesWithPricing.length} account group responses for RFQ ${i + 1}`);
+            } catch (error) {
+              console.error(`❌ Failed to save account group responses for RFQ ${i + 1}:`, error);
+            }
+          }
         } else {
           result.status = 'success';
         }
@@ -246,10 +333,28 @@ export class RFQProcessor {
         result.status = 'error';
       }
 
+      // Update request status in database if autoSave is enabled
+      if (autoSave && options.batchId && requestId) {
+        try {
+          await updateBatchRequestStatus(options.batchId, requestId, result.status, result.error);
+          console.log(`📊 Updated account group status for RFQ ${i + 1}: ${result.status}`);
+        } catch (error) {
+          console.error(`❌ Failed to update account group status for RFQ ${i + 1}:`, error);
+        }
+      }
       allResults.push(result);
       await new Promise(resolve => setTimeout(resolve, 100));
     }
 
+    // Update final batch statistics if autoSave is enabled
+    if (autoSave && options.batchId) {
+      try {
+        await updateBatchStatistics(options.batchId);
+        console.log('📊 Updated final account group batch statistics');
+      } catch (error) {
+        console.error('❌ Failed to update final account group batch statistics:', error);
+      }
+    }
     return allResults;
   }
 

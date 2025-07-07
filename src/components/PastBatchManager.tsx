@@ -22,6 +22,7 @@ import {
 import { BatchData, BatchRequest, BatchResponse, Project44APIClient, FreshXAPIClient } from '../utils/apiClient';
 import { formatCurrency } from '../utils/pricingCalculator';
 import { BatchAnalytics } from './BatchAnalytics';
+import { DetailedBatchResults } from './DetailedBatchResults';
 import { RFQProcessor, RFQProcessingOptions } from '../utils/rfqProcessor';
 import { PricingSettings } from '../types';
 
@@ -56,6 +57,7 @@ export const PastBatchManager: React.FC<PastBatchManagerProps> = ({
   const [batchError, setBatchError] = useState<string>('');
   const [reprocessing, setReprocessing] = useState(false);
   const [showAnalytics, setShowAnalytics] = useState(false);
+  const [showDetailedResults, setShowDetailedResults] = useState(false);
   const [currentProgress, setCurrentProgress] = useState({ current: 0, total: 0, item: '' });
   const [carrierNames, setCarrierNames] = useState<{ [carrierId: string]: string }>({});
 
@@ -286,6 +288,15 @@ export const PastBatchManager: React.FC<PastBatchManagerProps> = ({
                     className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
                   />
                 </div>
+                
+                <button
+                  onClick={() => setShowDetailedResults(true)}
+                  disabled={batchRequests.length === 0}
+                  className="flex items-center space-x-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors"
+                >
+                  <FileText className="h-4 w-4" />
+                  <span>View Detailed Results</span>
+                </button>
                 
                 <div className="flex items-center space-x-4">
                   <select
@@ -623,6 +634,44 @@ export const PastBatchManager: React.FC<PastBatchManagerProps> = ({
             onClose={() => setShowAnalytics(false)}
           />
         )}
+      
+      {/* Detailed Results Modal */}
+      {showDetailedResults && selectedBatch && batchRequests.length > 0 && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-xl shadow-2xl max-w-7xl w-full max-h-[90vh] overflow-hidden">
+            {/* Header */}
+            <div className="bg-gradient-to-r from-indigo-600 to-purple-600 px-6 py-4 text-white">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h2 className="text-xl font-bold">Detailed Batch Results: {selectedBatch.batch_name}</h2>
+                  <p className="text-indigo-100 text-sm">
+                    Complete RFQ analysis with cost comparisons, accessorial differences, and margin recommendations
+                  </p>
+                </div>
+                <button
+                  onClick={() => setShowDetailedResults(false)}
+                  className="text-white hover:text-gray-200 transition-colors"
+                >
+                  <span className="sr-only">Close</span>
+                  <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+            </div>
+
+            {/* Content */}
+            <div className="p-6 max-h-[calc(90vh-120px)] overflow-y-auto">
+              <DetailedBatchResults
+                batch={selectedBatch}
+                requests={batchRequests}
+                responses={originalResponses}
+                newResponses={newResponses.length > 0 ? newResponses : undefined}
+              />
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

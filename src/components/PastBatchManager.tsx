@@ -434,14 +434,9 @@ export const PastBatchManager: React.FC<PastBatchManagerProps> = ({
                       <div>• Customer: {selectedBatch.customer_name || 'None'}</div>
                       <div>• Carriers: {Object.keys(selectedBatch.selected_carriers || {}).length} selected</div>
                       <div>• Original pricing settings loaded</div>
+                      <div className="mt-1 text-blue-700">Settings auto-applied - edit before reprocessing if needed</div>
                     </div>
                     
-                    <div className="text-xs text-gray-600 bg-blue-50 px-3 py-2 rounded-lg">
-                      <div className="font-medium text-blue-900">Reprocessing will use:</div>
-                      <div>Customer: {selectedBatch.customer_name || 'None'}</div>
-                      <div>Carriers: {Object.keys(selectedBatch.selected_carriers || {}).length} selected</div>
-                      <div>Original pricing settings loaded</div>
-                    </div>
                     <button
                       onClick={reprocessBatch}
                       disabled={reprocessing || batchRequests.length === 0}

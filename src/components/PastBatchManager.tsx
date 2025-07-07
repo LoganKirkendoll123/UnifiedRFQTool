@@ -16,7 +16,8 @@ import {
   ArrowRight,
   AlertCircle,
   CheckCircle,
-  Loader
+  Loader,
+  Package
 } from 'lucide-react';
 import { BatchData, BatchRequest, BatchResponse, Project44APIClient, FreshXAPIClient } from '../utils/apiClient';
 import { formatCurrency } from '../utils/pricingCalculator';
@@ -56,11 +57,36 @@ export const PastBatchManager: React.FC<PastBatchManagerProps> = ({
   const [reprocessing, setReprocessing] = useState(false);
   const [showAnalytics, setShowAnalytics] = useState(false);
   const [currentProgress, setCurrentProgress] = useState({ current: 0, total: 0, item: '' });
+  const [carrierNames, setCarrierNames] = useState<{ [carrierId: string]: string }>({});
 
   useEffect(() => {
     loadBatches();
   }, []);
 
+  // Load carrier names for display
+  useEffect(() => {
+    loadCarrierNames();
+  }, [project44Client]);
+
+  const loadCarrierNames = async () => {
+    if (!project44Client) return;
+    
+    try {
+      const carrierGroups = await project44Client.getAvailableCarriersByGroup(false, false);
+      const nameMap: { [carrierId: string]: string } = {};
+      
+      carrierGroups.forEach(group => {
+        group.carriers.forEach(carrier => {
+          nameMap[carrier.id] = carrier.name;
+        });
+      });
+      
+      setCarrierNames(nameMap);
+      console.log(`✅ Loaded ${Object.keys(nameMap).length} carrier names for batch display`);
+    } catch (error) {
+      console.warn('⚠️ Failed to load carrier names:', error);
+    }
+  };
   const loadBatches = async () => {
     if (!project44Client) {
       console.error('❌ Project44 client not available');
@@ -498,6 +524,31 @@ export const PastBatchManager: React.FC<PastBatchManagerProps> = ({
                             {Object.keys(selectedBatch.selected_carriers || {}).length} carriers
                           </span>
                         </div>
+                        
+                        {/* Display actual carrier names */}
+                        {selectedBatch.selected_carriers && Object.keys(selectedBatch.selected_carriers).length > 0 && (
+                          <div className="mt-3 pt-3 border-t border-gray-200">
+                            <div className="flex items-center space-x-2 mb-2">
+                              <Package className="h-4 w-4 text-blue-600" />
+                              <span className="text-sm font-medium text-gray-700">Selected Carriers:</span>
+                            </div>
+                            <div className="max-h-32 overflow-y-auto">
+                              <div className="grid grid-cols-1 gap-1">
+                                {Object.entries(selectedBatch.selected_carriers)
+                                  .filter(([_, selected]) => selected)
+                                  .map(([carrierId, _]) => (
+                                    <div key={carrierId} className="text-xs bg-blue-50 text-blue-800 px-2 py-1 rounded">
+                                      {carrierNames[carrierId] || carrierId}
+                                    </div>
+                                  ))
+                                }
+                              </div>
+                            </div>
+                            <div className="text-xs text-gray-500 mt-2">
+                              {Object.values(selectedBatch.selected_carriers).filter(Boolean).length} of {Object.keys(selectedBatch.selected_carriers).length} carriers selected
+                            </div>
+                          </div>
+                        )}
                       </div>
                     </div>
 

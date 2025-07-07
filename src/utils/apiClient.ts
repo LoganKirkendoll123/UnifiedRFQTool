@@ -20,8 +20,6 @@ import {
 } from '../types';
 import { supabase } from './supabase';
 import { v4 as uuidv4 } from 'uuid';
-import { supabase } from './supabase';
-import { v4 as uuidv4 } from 'uuid';
 
 // Carrier group interface for organizing carriers
 export interface CarrierGroup {
@@ -101,7 +99,6 @@ export class Project44APIClient {
   private tokenExpiry: number = 0;
   private carrierGroups: CarrierGroup[] = []; // Store carrier groups for lookup
   private currentBatchId: string | null = null;
-  private currentBatchId: string | null = null;
 
   // Add a public method to get the access token for testing connection
   public async getAccessToken(): Promise<string> {
@@ -117,144 +114,6 @@ export class Project44APIClient {
     this.currentBatchId = batchId;
   }
 
-  // Create a new batch in the database
-  public async createBatch(
-    batchName: string,
-    customerName: string,
-    pricingSettings: any,
-    selectedCarriers: any,
-    processingMode: string = 'smart',
-    createdBy: string = 'anonymous'
-  ): Promise<string> {
-    try {
-      const { data, error } = await supabase
-        .from('rfq_batches')
-        .insert({
-          batch_name: batchName,
-          customer_name: customerName,
-          pricing_settings: pricingSettings,
-          selected_carriers: selectedCarriers,
-          processing_mode: processingMode,
-          created_by: createdBy
-        })
-        .select('id')
-        .single();
-
-      if (error) throw error;
-      
-      console.log(`✅ Created batch: ${data.id}`);
-      return data.id;
-    } catch (error) {
-      console.error('❌ Failed to create batch:', error);
-      throw error;
-    }
-  }
-
-  // Update batch statistics
-  public async updateBatchStats(
-    batchId: string,
-    stats: {
-      total_rfqs?: number;
-      successful_rfqs?: number;
-      total_quotes?: number;
-      best_total_price?: number;
-      total_profit?: number;
-    }
-  ): Promise<void> {
-    try {
-      const { error } = await supabase
-        .from('rfq_batches')
-        .update({
-          ...stats,
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', batchId);
-
-      if (error) throw error;
-      console.log(`✅ Updated batch stats for: ${batchId}`);
-    } catch (error) {
-      console.error('❌ Failed to update batch stats:', error);
-      // Don't throw - this is non-critical
-    }
-  }
-
-  // Save RFQ request to database
-  private async saveRFQRequest(
-    rfq: RFQRow,
-    requestPayload: any,
-    quotingDecision: string,
-    quotingReason: string,
-    batchId?: string
-  ): Promise<string | null> {
-    try {
-      const { data, error } = await supabase
-        .from('rfq_requests')
-        .insert({
-          batch_id: batchId || this.currentBatchId,
-          request_payload: requestPayload,
-          quoting_decision: quotingDecision,
-          quoting_reason: quotingReason,
-          from_zip: rfq.fromZip,
-          to_zip: rfq.toZip,
-          pallets: rfq.pallets,
-          gross_weight: rfq.grossWeight,
-          is_reefer: rfq.isReefer || false,
-          temperature: rfq.temperature,
-          commodity: rfq.commodity
-        })
-        .select('id')
-        .single();
-
-      if (error) throw error;
-      
-      console.log(`✅ Saved RFQ request: ${data.id}`);
-      return data.id;
-    } catch (error) {
-      console.error('❌ Failed to save RFQ request:', error);
-      return null;
-    }
-  }
-
-  // Save quote responses to database
-  private async saveQuoteResponses(
-    requestId: string,
-    quotes: Quote[],
-    batchId?: string
-  ): Promise<void> {
-    if (!requestId || quotes.length === 0) return;
-
-    try {
-      const responses = quotes.map(quote => ({
-        request_id: requestId,
-        batch_id: batchId || this.currentBatchId,
-        carrier_name: quote.carrier.name,
-        carrier_code: quote.carrierCode || quote.carrier.scac,
-        carrier_scac: quote.carrier.scac,
-        quote_id: quote.id || quote.quoteId.toString(),
-        service_level_code: quote.serviceLevel?.code,
-        service_level_description: quote.serviceLevel?.description,
-        carrier_total_rate: quote.baseRate + quote.fuelSurcharge + quote.premiumsAndDiscounts,
-        customer_price: quote.baseRate + quote.fuelSurcharge + quote.premiumsAndDiscounts, // Will be updated with pricing
-        profit: 0, // Will be updated with pricing
-        markup_applied: 0, // Will be updated with pricing
-        transit_days: quote.transitDays,
-        quote_mode: (quote as any).quoteMode || 'standard',
-        raw_response: quote,
-        charge_breakdown: quote.rateQuoteDetail?.charges || []
-      }));
-
-      const { error } = await supabase
-        .from('rfq_responses')
-        .insert(responses);
-
-      if (error) throw error;
-      
-      console.log(`✅ Saved ${responses.length} quote responses for request: ${requestId}`);
-    } catch (error) {
-      console.error('❌ Failed to save quote responses:', error);
-      // Don't throw - this is non-critical
-    }
-  }
   // Create a new batch for tracking RFQ requests
   async createBatch(
     batchName: string,
@@ -799,7 +658,6 @@ export class Project44APIClient {
     isFTLMode: boolean = false,
     isReeferMode: boolean = false,
     batchId?: string
-    batchId?: string
   ): Promise<Quote[]> {
     const token = await this._getAccessToken();
     
@@ -916,19 +774,6 @@ export class Project44APIClient {
       console.log('⚠️ No carriers selected - will get quotes from all available carriers');
     }
 
-    // HARDCODED: Save RFQ request to database before making API call
-    const quotingDecision = isReeferMode ? 'reefer' : 
-                           isVolumeMode ? 'project44-volume' : 
-                           isFTLMode ? 'project44-ftl' : 'project44-standard';
-    const quotingReason = `${modeDescription} quote request via Project44 API`;
-    
-    const requestId = await this.saveRFQRequest(
-      rfq, 
-      requestPayload, 
-      quotingDecision, 
-      quotingReason, 
-      batchId
-    );
     console.log('📤 Sending comprehensive request payload:', JSON.stringify(requestPayload, null, 2));
 
     // Save request to database if batch ID is provided
@@ -1056,10 +901,6 @@ export class Project44APIClient {
       return quote;
     });
 
-    // HARDCODED: Save quote responses to database after receiving them
-    if (requestId && quotes.length > 0) {
-      await this.saveQuoteResponses(requestId, quotes, batchId);
-    }
     console.log(`✅ Transformed ${quotes.length} filtered ${modeDescription} quotes from selected carriers`);
     
     // Save responses to database if we have a request ID
@@ -1081,7 +922,6 @@ export class Project44APIClient {
     isVolumeMode: boolean = false,
     isFTLMode: boolean = false,
     isReeferMode: boolean = false,
-    batchId?: string
     batchId?: string
   ): Promise<Quote[]> {
     const token = await this._getAccessToken();
@@ -1157,19 +997,6 @@ export class Project44APIClient {
       console.log('📦 Using standard lineItems for VLTL (no enhanced handling units)');
     }
 
-    // HARDCODED: Save RFQ request to database before making API call
-    const quotingDecision = isReeferMode ? 'reefer' : 
-                           isVolumeMode ? 'project44-volume' : 
-                           isFTLMode ? 'project44-ftl' : 'project44-standard';
-    const quotingReason = `${modeDescription} quote request for account group ${accountGroupCode}`;
-    
-    const requestId = await this.saveRFQRequest(
-      rfq, 
-      requestPayload, 
-      quotingDecision, 
-      quotingReason, 
-      batchId
-    );
     console.log('📤 Sending group request payload:', JSON.stringify(requestPayload, null, 2));
 
     // Save request to database if batch ID is provided
@@ -1281,10 +1108,6 @@ export class Project44APIClient {
       return quote;
     });
 
-    // HARDCODED: Save quote responses to database after receiving them
-    if (requestId && quotes.length > 0) {
-      await this.saveQuoteResponses(requestId, quotes, batchId);
-    }
     console.log(`✅ Transformed ${quotes.length} quotes from account group ${accountGroupCode}`);
     
     // Save responses to database if we have a request ID
@@ -1511,7 +1334,6 @@ export class Project44APIClient {
 export class FreshXAPIClient {
   private apiKey: string;
   private currentBatchId: string | null = null;
-  private currentBatchId: string | null = null;
 
   constructor(apiKey: string) {
     this.apiKey = apiKey;
@@ -1520,93 +1342,6 @@ export class FreshXAPIClient {
   // Set current batch ID for request tracking
   public setCurrentBatchId(batchId: string): void {
     this.currentBatchId = batchId;
-  }
-
-  // Save RFQ request to database
-  private async saveRFQRequest(
-    rfq: RFQRow,
-    requestPayload: any,
-    quotingDecision: string,
-    quotingReason: string,
-    batchId?: string
-  ): Promise<string | null> {
-    try {
-      const { data, error } = await supabase
-        .from('rfq_requests')
-        .insert({
-          batch_id: batchId || this.currentBatchId,
-          request_payload: requestPayload,
-          quoting_decision: quotingDecision,
-          quoting_reason: quotingReason,
-          from_zip: rfq.fromZip,
-          to_zip: rfq.toZip,
-          pallets: rfq.pallets,
-          gross_weight: rfq.grossWeight,
-          is_reefer: rfq.isReefer || true, // FreshX is always reefer
-          temperature: rfq.temperature,
-          commodity: rfq.commodity
-        })
-        .select('id')
-        .single();
-
-      if (error) throw error;
-      
-      console.log(`✅ Saved FreshX RFQ request: ${data.id}`);
-      return data.id;
-    } catch (error) {
-      console.error('❌ Failed to save FreshX RFQ request:', error);
-      return null;
-    }
-  }
-
-  // Save quote responses to database
-  private async saveQuoteResponses(
-    requestId: string,
-    quotes: Quote[],
-    batchId?: string
-  ): Promise<void> {
-    if (!requestId || quotes.length === 0) return;
-
-    try {
-      const responses = quotes.map(quote => ({
-        request_id: requestId,
-        batch_id: batchId || this.currentBatchId,
-        carrier_name: quote.carrier.name,
-        carrier_code: quote.carrier.scac || 'FRESHX',
-        carrier_scac: quote.carrier.scac,
-        quote_id: quote.quoteId.toString(),
-        service_level_code: 'REEFER',
-        service_level_description: 'Refrigerated Transport',
-        carrier_total_rate: quote.baseRate + quote.fuelSurcharge + quote.premiumsAndDiscounts,
-        customer_price: quote.baseRate + quote.fuelSurcharge + quote.premiumsAndDiscounts, // Will be updated with pricing
-        profit: 0, // Will be updated with pricing
-        markup_applied: 0, // Will be updated with pricing
-        transit_days: quote.transitDays,
-        quote_mode: 'reefer',
-        raw_response: quote,
-        charge_breakdown: quote.accessorial || []
-      }));
-
-      const { error } = await supabase
-        .from('rfq_responses')
-        .insert(responses);
-
-      if (error) throw error;
-      
-      console.log(`✅ Saved ${responses.length} FreshX quote responses for request: ${requestId}`);
-    } catch (error) {
-      console.error('❌ Failed to save FreshX quote responses:', error);
-      // Don't throw - this is non-critical
-    }
-  }
-  // Set current batch ID
-  setCurrentBatchId(batchId: string): void {
-    this.currentBatchId = batchId;
-  }
-
-  // Get current batch ID
-  getCurrentBatchId(): string | null {
-    return this.currentBatchId;
   }
 
   // Save RFQ request to database
@@ -1712,6 +1447,16 @@ export class FreshXAPIClient {
     }
   }
 
+  // Set current batch ID
+  setCurrentBatchId(batchId: string): void {
+    this.currentBatchId = batchId;
+  }
+
+  // Get current batch ID
+  getCurrentBatchId(): string | null {
+    return this.currentBatchId;
+  }
+
   async getQuotes(rfq: RFQRow, batchId?: string): Promise<Quote[]> {
     console.log('🌡️ Getting FreshX reefer quotes for:', {
       route: `${rfq.fromZip} → ${rfq.toZip}`,
@@ -1738,17 +1483,6 @@ export class FreshXAPIClient {
       accessorial: rfq.accessorial || []
     };
 
-    // HARDCODED: Save RFQ request to database before making API call
-    const quotingDecision = 'freshx';
-    const quotingReason = 'Refrigerated freight quote request via FreshX API';
-    
-    const requestId = await this.saveRFQRequest(
-      rfq, 
-      requestPayload, 
-      quotingDecision, 
-      quotingReason, 
-      batchId
-    );
     console.log('📤 Sending FreshX request:', requestPayload);
 
     // Save request to database if batch ID is provided
@@ -1835,10 +1569,6 @@ export class FreshXAPIClient {
         }
       }));
 
-      // HARDCODED: Save quote responses to database after receiving them
-      if (requestId && transformedQuotes.length > 0) {
-        await this.saveQuoteResponses(requestId, transformedQuotes, batchId);
-      }
       console.log(`✅ Transformed ${transformedQuotes.length} FreshX quotes`);
       
       // Save responses to database if we have a request ID

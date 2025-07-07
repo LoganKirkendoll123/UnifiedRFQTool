@@ -43,7 +43,6 @@ import { FileUpload } from './FileUpload';
 import { parseCSV, parseXLSX } from '../utils/fileParser';
 import { useRFQProcessor } from '../hooks/useRFQProcessor';
 import { useCarrierManagement } from '../hooks/useCarrierManagement';
-import { saveRFQBatch, calculateBatchSummary } from '../utils/rfqBatchManager';
 import { supabase } from '../utils/supabase';
 import * as XLSX from 'xlsx';
 

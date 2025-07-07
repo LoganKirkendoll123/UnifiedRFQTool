@@ -58,6 +58,12 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
   const [processing, setProcessing] = useState(false);
   const [analysis, setAnalysis] = useState<CarrierMarginAnalysis[]>([]);
   const [progress, setProgress] = useState({ current: 0, total: 0, item: '' });
+  const [error, setError] = useState<string>('');
+  const [debugInfo, setDebugInfo] = useState<{
+    originalCarriers: string[];
+    newCarriers: string[];
+    matchedCarriers: string[];
+  } | null>(null);
 
   useEffect(() => {
     loadBatches();
@@ -106,12 +112,15 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
   const reprocessForMarginAnalysis = async () => {
     if (!selectedBatch || !project44Client || !freshxClient || batchRequests.length === 0) {
       console.error('❌ Missing required data for margin analysis');
+      setError('Missing required data for margin analysis');
       return;
     }
 
     setProcessing(true);
     setNewResponses([]);
     setAnalysis([]);
+    setError('');
+    setDebugInfo(null);
 
     try {
       console.log(`🔄 Reprocessing batch for margin analysis: ${selectedBatch.batch_name}`);
@@ -152,37 +161,64 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
       console.log(`✅ Margin analysis completed: ${newBatchResponses.length} new responses`);
       
       // Calculate margin analysis
-      calculateMarginAnalysis(newBatchResponses);
+      if (newBatchResponses.length === 0) {
+        setError('No quotes received during reprocessing. Check your API credentials and carrier selection.');
+        return;
+      }
+      
+      calculateMarginAnalysis(originalResponses, newBatchResponses);
       
     } catch (error) {
       console.error('❌ Failed to reprocess for margin analysis:', error);
+      setError(`Failed to reprocess batch: ${error instanceof Error ? error.message : 'Unknown error'}`);
     } finally {
       setProcessing(false);
       setProgress({ current: 0, total: 0, item: '' });
     }
   };
 
-  const calculateMarginAnalysis = (newResponses: BatchResponse[]) => {
+  const calculateMarginAnalysis = (originalResponses: BatchResponse[], newResponses: BatchResponse[]) => {
     console.log('🧮 Calculating carrier margin analysis...');
+    console.log(`📊 Original responses: ${originalResponses.length}, New responses: ${newResponses.length}`);
     
     // Group responses by carrier
     const originalByCarrier = groupResponsesByCarrier(originalResponses);
     const newByCarrier = groupResponsesByCarrier(newResponses);
     
+    // Debug information
+    const originalCarriers = Object.keys(originalByCarrier);
+    const newCarriers = Object.keys(newByCarrier);
+    const matchedCarriers = originalCarriers.filter(carrier => newByCarrier[carrier]);
+    
+    console.log(`📊 Original carriers: ${originalCarriers.length}`, originalCarriers);
+    console.log(`📊 New carriers: ${newCarriers.length}`, newCarriers);
+    console.log(`📊 Matched carriers: ${matchedCarriers.length}`, matchedCarriers);
+    
+    setDebugInfo({
+      originalCarriers,
+      newCarriers,
+      matchedCarriers
+    });
+    
+    if (matchedCarriers.length === 0) {
+      setError('No matching carriers found between original and new quotes. This could be due to different carrier selection or API issues.');
+      return;
+    }
+    
     const carrierAnalyses: CarrierMarginAnalysis[] = [];
     
-    // Get all unique carriers
-    const allCarriers = new Set([
-      ...Object.keys(originalByCarrier),
-      ...Object.keys(newByCarrier)
-    ]);
-    
-    allCarriers.forEach(carrierName => {
+    // Only analyze carriers that appear in both datasets
+    matchedCarriers.forEach(carrierName => {
       const originalQuotes = originalByCarrier[carrierName] || [];
       const newQuotes = newByCarrier[carrierName] || [];
       
-      // Skip if we don't have quotes from both time periods
-      if (originalQuotes.length === 0 || newQuotes.length === 0) return;
+      // Skip if we don't have sufficient quotes
+      if (originalQuotes.length === 0 || newQuotes.length === 0) {
+        console.log(`⚠️ Skipping ${carrierName}: original=${originalQuotes.length}, new=${newQuotes.length}`);
+        return;
+      }
+      
+      console.log(`✅ Analyzing ${carrierName}: original=${originalQuotes.length}, new=${newQuotes.length} quotes`);
       
       const originalAvgPrice = originalQuotes.reduce((sum, q) => sum + q.customer_price, 0) / originalQuotes.length;
       const newAvgPrice = newQuotes.reduce((sum, q) => sum + q.customer_price, 0) / newQuotes.length;
@@ -210,6 +246,13 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
         reasoning
       });
     });
+    
+    console.log(`✅ Generated analysis for ${carrierAnalyses.length} carriers`);
+    
+    if (carrierAnalyses.length === 0) {
+      setError('No carrier analysis could be generated. All carriers may have been filtered out due to insufficient quote data.');
+      return;
+    }
     
     // Sort by price change impact (most significant first)
     carrierAnalyses.sort((a, b) => Math.abs(b.priceChangePercent) - Math.abs(a.priceChangePercent));
@@ -388,6 +431,48 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
               )}
             </button>
           </div>
+
+          {/* Error Display */}
+          {error && (
+            <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg">
+              <div className="flex items-start space-x-3">
+                <AlertTriangle className="h-5 w-5 text-red-600 flex-shrink-0 mt-0.5" />
+                <div className="text-sm text-red-800">
+                  <p className="font-medium mb-1">Analysis Error:</p>
+                  <p>{error}</p>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Debug Information */}
+          {debugInfo && (
+            <div className="mb-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+              <div className="text-sm text-blue-800">
+                <p className="font-medium mb-2">Analysis Debug Information:</p>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div>
+                    <div className="font-medium">Original Carriers ({debugInfo.originalCarriers.length}):</div>
+                    <div className="text-xs max-h-20 overflow-y-auto">
+                      {debugInfo.originalCarriers.join(', ') || 'None'}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="font-medium">New Carriers ({debugInfo.newCarriers.length}):</div>
+                    <div className="text-xs max-h-20 overflow-y-auto">
+                      {debugInfo.newCarriers.join(', ') || 'None'}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="font-medium">Matched Carriers ({debugInfo.matchedCarriers.length}):</div>
+                    <div className="text-xs max-h-20 overflow-y-auto">
+                      {debugInfo.matchedCarriers.join(', ') || 'None'}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* Progress */}
           {processing && (

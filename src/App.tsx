@@ -56,7 +56,8 @@ import {
   Sparkles,
   Building2,
   Globe,
-  Layers
+  Layers,
+  Calculator
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 

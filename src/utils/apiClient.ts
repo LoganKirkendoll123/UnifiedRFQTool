@@ -676,13 +676,6 @@ export class Project44APIClient {
     rfq.toZip = rfq.toZip.replace(/\D/g, '').substring(0, 5).padEnd(5, '0'); 
     
     // Validate state codes
-    const validStates = new Set([
-      'AL', 'AK', 'AZ', 'AR', 'CA', 'CO', 'CT', 'DE', 'FL', 'GA', 'HI', 'ID', 'IL', 'IN', 'IA',
-      'KS', 'KY', 'LA', 'ME', 'MD', 'MA', 'MI', 'MN', 'MS', 'MO', 'MT', 'NE', 'NV', 'NH', 'NJ',
-      'NM', 'NY', 'NC', 'ND', 'OH', 'OK', 'OR', 'PA', 'RI', 'SC', 'SD', 'TN', 'TX', 'UT', 'VT',
-      'VA', 'WA', 'WV', 'WI', 'WY', 'AS', 'DC', 'FM', 'GU', 'MH', 'MP', 'PW', 'PR', 'VI'
-    ]);
-    
     // Default to empty if invalid
     if (rfq.originState && !validStates.has(rfq.originState.toUpperCase())) {
       console.log(`⚠️ Invalid origin state: ${rfq.originState} - removing`);
@@ -915,9 +908,6 @@ export class Project44APIClient {
     
     console.log(`💾 ENFORCING DATABASE TRACKING: Saving group request before API call`);
     const savedRequestId = await this.saveRFQRequest(rfq, useBatchId, quotingDecision, quotingReason);
-
-    const token = await this._getAccessToken();
-    
     console.log(`💰 Getting ${modeDescription} quotes for entire account group:`, {
       accountGroup: accountGroupCode,
       route: `${rfq.fromZip} → ${rfq.toZip}`,
@@ -1400,8 +1390,6 @@ export class FreshXAPIClient {
     const quotingReason = `FreshX reefer quoting for ${rfq.pallets} pallets, ${rfq.grossWeight.toLocaleString()} lbs, ${rfq.temperature || 'AMBIENT'} temperature`;
     
     console.log(`💾 ENFORCING DATABASE TRACKING: Saving FreshX request before API call`);
-    const savedRequestId = await this.saveRFQRequest(rfq, useBatchId, quotingDecision, quotingReason);
-
     console.log('🌡️ Getting FreshX reefer quotes for:', {
       route: `${rfq.fromZip} → ${rfq.toZip}`,
       pallets: rfq.pallets,

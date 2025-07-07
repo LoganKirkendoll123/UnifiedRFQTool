@@ -46,24 +46,6 @@ interface ShipmentAnalysis {
   newBestPrice?: number;
   costDifference?: number;
   costDifferencePercent?: number;
-  originalAccessorials: string[];
-  newAccessorials?: string[];
-  accessorialDifferences: {
-    added: string[];
-    removed: string[];
-    unchanged: string[];
-  };
-  marginRecommendations: {
-    toMatchOriginal: number;
-    toMaximizeProfit: number;
-    revenueImpact: number;
-  };
-  carrierComparison: {
-    originalCarriers: string[];
-    newCarriers?: string[];
-    carriersLost: string[];
-    carriersGained: string[];
-  };
 }
 
 export const BatchAnalysisView: React.FC<BatchAnalysisViewProps> = ({
@@ -78,6 +60,13 @@ export const BatchAnalysisView: React.FC<BatchAnalysisViewProps> = ({
   const [shipmentAnalyses, setShipmentAnalyses] = useState<ShipmentAnalysis[]>([]);
   const [isLoadingSavedAnalysis, setIsLoadingSavedAnalysis] = useState(false);
   const [savedAnalysisData, setSavedAnalysisData] = useState<any>(null);
+  const [overallStats, setOverallStats] = useState({
+    betterPricingCount: 0,
+    worsePricingCount: 0,
+    unchangedCount: 0,
+    avgPriceChange: 0,
+    totalPriceDifference: 0
+  });
 
   // Load saved analysis if analysisId is provided
   useEffect(() => {
@@ -284,44 +273,6 @@ export const BatchAnalysisView: React.FC<BatchAnalysisViewProps> = ({
         ? (costDifference / originalBestPrice) * 100 
         : undefined;
 
-      // Extract accessorials
-      const originalAccessorials = Array.from(new Set(
-        originalQuotes.flatMap(q => 
-          q.raw_response?.accessorialServices?.map((a: any) => a.code) || []
-        )
-      ));
-      
-      const newAccessorials = Array.from(new Set(
-        newQuotes.flatMap(q => 
-          q.raw_response?.accessorialServices?.map((a: any) => a.code) || []
-        )
-      ));
-
-      const accessorialDifferences = {
-        added: newAccessorials.filter(a => !originalAccessorials.includes(a)),
-        removed: originalAccessorials.filter(a => !newAccessorials.includes(a)),
-        unchanged: originalAccessorials.filter(a => newAccessorials.includes(a))
-      };
-
-      // Calculate margin recommendations
-      const marginRecommendations = {
-        toMatchOriginal: originalBestPrice > 0 && newBestPrice !== undefined
-          ? ((originalBestPrice - (newBestPrice * 0.85)) / (newBestPrice * 0.85)) * 100
-          : 0,
-        toMaximizeProfit: costDifference !== undefined && costDifference < 0 ? 25 : 20,
-        revenueImpact: costDifference !== undefined ? costDifference : 0
-      };
-
-      // Carrier comparison
-      const originalCarriers = Array.from(new Set(originalQuotes.map(q => q.carrier_name)));
-      const newCarriers = Array.from(new Set(newQuotes.map(q => q.carrier_name)));
-      
-      const carrierComparison = {
-        originalCarriers,
-        newCarriers,
-        carriersLost: originalCarriers.filter(c => !newCarriers.includes(c)),
-        carriersGained: newCarriers.filter(c => !originalCarriers.includes(c))
-      };
 
       return {
         request,
@@ -330,15 +281,29 @@ export const BatchAnalysisView: React.FC<BatchAnalysisViewProps> = ({
         originalBestPrice,
         newBestPrice,
         costDifference,
-        costDifferencePercent,
-        originalAccessorials,
-        newAccessorials,
-        accessorialDifferences,
-        marginRecommendations,
-        carrierComparison
+        costDifferencePercent
       };
     });
 
+    // Calculate overall statistics if we have comparison data
+    if (newResponses && newResponses.length > 0) {
+      const betterPricingCount = analyses.filter(a => a.costDifference !== undefined && a.costDifference < 0).length;
+      const worsePricingCount = analyses.filter(a => a.costDifference !== undefined && a.costDifference > 0).length;
+      const unchangedCount = analyses.filter(a => a.costDifference !== undefined && Math.abs(a.costDifference) < 0.01).length;
+      
+      const totalOriginalValue = responses.reduce((sum, r) => sum + extractPricingFromResponse(r).customerPrice, 0);
+      const totalNewValue = newResponses.reduce((sum, r) => sum + extractPricingFromResponse(r).customerPrice, 0);
+      const totalPriceDifference = totalNewValue - totalOriginalValue;
+      const avgPriceChange = totalOriginalValue > 0 ? (totalPriceDifference / totalOriginalValue) * 100 : 0;
+      
+      setOverallStats({
+        betterPricingCount,
+        worsePricingCount,
+        unchangedCount,
+        avgPriceChange,
+        totalPriceDifference
+      });
+    }
     setShipmentAnalyses(analyses);
   };
 
@@ -370,13 +335,9 @@ export const BatchAnalysisView: React.FC<BatchAnalysisViewProps> = ({
 
   const getStatusColor = (analysis: ShipmentAnalysis) => {
     if (analysis.newQuotes && analysis.newQuotes.length > 0) {
-      if (analysis.costDifference !== undefined && analysis.costDifference < 0) {
-        return 'border-green-500 bg-green-50';
-      } else if (analysis.costDifference !== undefined && analysis.costDifference > 0) {
-        return 'border-red-500 bg-red-50';
-      } else {
-        return 'border-blue-500 bg-blue-50';
-      }
+      return 'border-green-200 bg-green-50';
+    } else if (analysis.originalQuotes.length > 0) {
+      return 'border-blue-200 bg-blue-50';
     }
     return 'border-gray-200 bg-gray-50';
   };
@@ -410,120 +371,12 @@ export const BatchAnalysisView: React.FC<BatchAnalysisViewProps> = ({
     );
   };
 
-  const renderAccessorialComparison = (analysis: ShipmentAnalysis) => {
-    if (!analysis.newAccessorials) return null;
-    
-    return (
-      <div className="bg-gray-50 rounded-lg p-4 mb-4">
-        <h4 className="text-sm font-medium text-gray-700 mb-3">Accessorial Services Comparison</h4>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          {analysis.accessorialDifferences.added.length > 0 && (
-            <div>
-              <div className="text-sm font-medium text-green-700 mb-2 flex items-center space-x-1">
-                <Plus className="h-3 w-3" />
-                <span>Added Services</span>
-              </div>
-              <div className="space-y-1">
-                {analysis.accessorialDifferences.added.map(service => (
-                  <div key={service} className="text-xs bg-green-100 text-green-800 px-2 py-1 rounded">
-                    {service}
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-          
-          {analysis.accessorialDifferences.removed.length > 0 && (
-            <div>
-              <div className="text-sm font-medium text-red-700 mb-2 flex items-center space-x-1">
-                <Minus className="h-3 w-3" />
-                <span>Removed Services</span>
-              </div>
-              <div className="space-y-1">
-                {analysis.accessorialDifferences.removed.map(service => (
-                  <div key={service} className="text-xs bg-red-100 text-red-800 px-2 py-1 rounded">
-                    {service}
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-          
-          {analysis.accessorialDifferences.unchanged.length > 0 && (
-            <div>
-              <div className="text-sm font-medium text-gray-700 mb-2">Unchanged Services</div>
-              <div className="space-y-1">
-                {analysis.accessorialDifferences.unchanged.map(service => (
-                  <div key={service} className="text-xs bg-gray-100 text-gray-700 px-2 py-1 rounded">
-                    {service}
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
-      </div>
-    );
-  };
 
-  const renderMarginRecommendations = (analysis: ShipmentAnalysis) => (
-    <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-4">
-      <h4 className="text-sm font-medium text-yellow-800 mb-3 flex items-center space-x-2">
-        <Calculator className="h-4 w-4" />
-        <span>Margin Optimization Recommendations</span>
-      </h4>
-      
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <div className="space-y-3">
-          <div>
-            <div className="text-sm font-medium text-yellow-700">To Match Original Revenue:</div>
-            <div className="text-lg font-bold text-yellow-900">
-              {analysis.marginRecommendations.toMatchOriginal.toFixed(1)}%
-            </div>
-            <div className="text-xs text-yellow-600">
-              Maintain customer pricing at original levels
-            </div>
-          </div>
-          
-          <div>
-            <div className="text-sm font-medium text-yellow-700">To Maximize Profit:</div>
-            <div className="text-lg font-bold text-yellow-900">
-              {analysis.marginRecommendations.toMaximizeProfit.toFixed(1)}%
-            </div>
-            <div className="text-xs text-yellow-600">
-              {analysis.costDifference !== undefined && analysis.costDifference < 0 
-                ? 'Capitalize on cost savings' 
-                : 'Standard profit optimization'}
-            </div>
-          </div>
-        </div>
-        
-        <div className="space-y-3">
-          <div>
-            <div className="text-sm font-medium text-yellow-700">Revenue Impact:</div>
-            <div className={`text-lg font-bold ${getTrendColor(analysis.marginRecommendations.revenueImpact, false)}`}>
-              {analysis.marginRecommendations.revenueImpact > 0 ? '+' : ''}{formatCurrency(analysis.marginRecommendations.revenueImpact)}
-            </div>
-            <div className="text-xs text-yellow-600">
-              Per shipment impact on revenue
-            </div>
-          </div>
-          
-          {analysis.costDifference !== undefined && analysis.costDifference < 0 && (
-            <div className="bg-green-100 border border-green-200 rounded p-2">
-              <div className="text-xs text-green-800 font-medium">💡 Opportunity</div>
-              <div className="text-xs text-green-700 mt-1">
-                Cost savings of {formatCurrency(Math.abs(analysis.costDifference))} can be used to:
-                <br />• Reduce customer pricing to win more business
-                <br />• Increase margin while maintaining competitive pricing
-                <br />• Pass through partial savings while retaining profit
-              </div>
-            </div>
-          )}
-        </div>
-      </div>
-    </div>
-  );
+  const getChangeColor = (value: number) => {
+    if (value > 0) return 'text-red-600';
+    if (value < 0) return 'text-green-600';
+    return 'text-gray-600';
+  };
 
   return (
     <div className="space-y-6">
@@ -755,13 +608,13 @@ export const BatchAnalysisView: React.FC<BatchAnalysisViewProps> = ({
                         </div>
                       )}
                       
-                      <div className="bg-purple-50 rounded-lg p-3">
-                        <div className="text-sm text-purple-600 mb-1">Margin Impact</div>
-                        <div className={`text-lg font-bold ${getTrendColor(analysis.marginRecommendations.revenueImpact, false)}`}>
-                          {analysis.marginRecommendations.revenueImpact > 0 ? '+' : ''}{formatCurrency(analysis.marginRecommendations.revenueImpact)}
+                      <div className="bg-blue-50 rounded-lg p-3">
+                        <div className="text-sm text-blue-600 mb-1">Quote Count</div>
+                        <div className="text-lg font-bold text-blue-900">
+                          {analysis.newQuotes.length} vs {analysis.originalQuotes.length}
                         </div>
-                        <div className="text-xs text-purple-700">
-                          Revenue impact per shipment
+                        <div className="text-xs text-blue-700">
+                          New vs Original
                         </div>
                       </div>
                     </div>
@@ -812,6 +665,25 @@ export const BatchAnalysisView: React.FC<BatchAnalysisViewProps> = ({
             </div>
           );
         })}
+        
+        {/* Show message if no comparison data */}
+        {(!newResponses || newResponses.length === 0) && (
+          <div className="bg-white rounded-lg shadow-md p-8 text-center">
+            <div className="flex items-center justify-center mb-4">
+              <BarChart3 className="h-12 w-12 text-gray-400" />
+            </div>
+            <h3 className="text-lg font-medium text-gray-900 mb-2">No Comparison Data</h3>
+            <p className="text-gray-600 mb-4">
+              To see margin analysis, reprocess this batch with "Compare with Current Settings"
+            </p>
+            <button
+              onClick={onBack}
+              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+            >
+              Back to Batch Manager
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );

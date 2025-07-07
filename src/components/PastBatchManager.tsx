@@ -56,8 +56,6 @@ export const PastBatchManager: React.FC<PastBatchManagerProps> = ({
   const [loadingBatchDetails, setLoadingBatchDetails] = useState(false);
   const [batchError, setBatchError] = useState<string>('');
   const [reprocessing, setReprocessing] = useState(false);
-  const [showAnalytics, setShowAnalytics] = useState(false);
-  const [showDetailedResults, setShowDetailedResults] = useState(false);
   const [showAnalysisView, setShowAnalysisView] = useState(false);
   const [selectedAnalysisId, setSelectedAnalysisId] = useState<string | null>(null);
   const [savedAnalyses, setSavedAnalyses] = useState<any[]>([]);
@@ -425,6 +423,7 @@ export const PastBatchManager: React.FC<PastBatchManagerProps> = ({
           requests={batchRequests}
           responses={originalResponses}
           newResponses={newResponses.length > 0 ? newResponses : undefined}
+          analysisId={selectedAnalysisId}
           onBack={() => setShowAnalysisView(false)}
         />
       ) : (

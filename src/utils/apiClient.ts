@@ -425,7 +425,7 @@ export class Project44APIClient {
                              isVolumeMode ? 'project44-volume' : 
                              isFTLMode ? 'project44-ftl' : 'project44-standard';
       const quotingReason = `${quotingDecision.toUpperCase()} request for ${rfq.fromZip} → ${rfq.toZip}`;
-      requestId = await saveRFQRequest(rfq, quotingDecision, quotingReason);
+      requestId = await saveRFQRequest(rfq, quotingDecision, quotingReason, batchId);
     } catch (error) {
       console.error('Failed to log Project44 request:', error);
     }
@@ -695,7 +695,7 @@ export class Project44APIClient {
                              isVolumeMode ? 'project44-volume' : 
                              isFTLMode ? 'project44-ftl' : 'project44-standard';
       const quotingReason = `${quotingDecision.toUpperCase()} account group request for ${rfq.fromZip} → ${rfq.toZip}`;
-      requestId = await saveRFQRequest(rfq, quotingDecision, quotingReason);
+      requestId = await saveRFQRequest(rfq, quotingDecision, quotingReason, batchId);
     } catch (error) {
       console.error('Failed to log Project44 account group request:', error);
     }
@@ -1112,7 +1112,7 @@ export class FreshXAPIClient {
     // Log request to database
     let requestId: string | null = null;
     try {
-      requestId = await saveRFQRequest(rfq, 'freshx', `FreshX reefer request for ${rfq.fromZip} → ${rfq.toZip}`);
+      requestId = await saveRFQRequest(rfq, 'freshx', `FreshX reefer request for ${rfq.fromZip} → ${rfq.toZip}`, batchId);
     } catch (error) {
       console.error('Failed to log FreshX request:', error);
     }

@@ -115,7 +115,8 @@ export const createRFQBatch = async (
 export const saveRFQRequest = async (
   rfqData: RFQRow,
   quotingDecision: string,
-  quotingReason: string
+  quotingReason: string,
+  batchId?: string
 ): Promise<string> => {
   try {
     console.log('💾 Saving RFQ request...', { 
@@ -133,7 +134,8 @@ export const saveRFQRequest = async (
       gross_weight: rfqData.grossWeight,
       is_reefer: rfqData.isReefer || false,
       temperature: rfqData.temperature,
-      commodity: rfqData.commodity
+      commodity: rfqData.commodity,
+      batch_id: batchId
     };
 
     const { data, error } = await supabase

@@ -516,6 +516,138 @@ export const deleteRFQBatch = async (batchId: string): Promise<void> => {
   }
 };
 
+// Load RFQ batch (simplified interface for UnifiedRFQTool)
+export const loadRFQBatch = async (batchId: string): Promise<{
+  id: string;
+  batch_name: string;
+  customer_name?: string;
+  rfq_data: RFQRow[];
+  results_data?: any[];
+  pricing_settings: PricingSettings;
+  selected_carriers: { [carrierId: string]: boolean };
+} | null> => {
+  try {
+    console.log('📥 Loading RFQ batch for UnifiedRFQTool:', batchId);
+
+    // First try to load from mass_rfq_batches (new format)
+    const { data: massRfqData, error: massRfqError } = await supabase
+      .from('mass_rfq_batches')
+      .select('*')
+      .eq('id', batchId)
+      .single();
+
+    if (!massRfqError && massRfqData) {
+      console.log('✅ Loaded from mass_rfq_batches');
+      return {
+        id: massRfqData.id,
+        batch_name: massRfqData.batch_name,
+        customer_name: massRfqData.customer_name,
+        rfq_data: massRfqData.rfq_data,
+        results_data: massRfqData.results_data,
+        pricing_settings: massRfqData.pricing_settings,
+        selected_carriers: massRfqData.selected_carriers
+      };
+    }
+
+    // Fallback to rfq_batches (old format) and reconstruct
+    const batchData = await loadRFQBatchWithData(batchId);
+    if (!batchData) {
+      console.log('ℹ️ RFQ batch not found:', batchId);
+      return null;
+    }
+
+    // Convert requests back to RFQRow format
+    const rfqData: RFQRow[] = batchData.requests.map(request => request.request_payload);
+
+    // Reconstruct results if available
+    let resultsData;
+    try {
+      resultsData = await reconstructSmartQuotingResults(batchId);
+    } catch (error) {
+      console.warn('Could not reconstruct results:', error);
+      resultsData = [];
+    }
+
+    console.log('✅ Loaded and reconstructed from rfq_batches');
+    return {
+      id: batchData.batch.id,
+      batch_name: batchData.batch.batch_name,
+      customer_name: batchData.batch.customer_name,
+      rfq_data: rfqData,
+      results_data: resultsData,
+      pricing_settings: batchData.batch.pricing_settings,
+      selected_carriers: batchData.batch.selected_carriers
+    };
+  } catch (error) {
+    console.error('❌ Error loading RFQ batch:', error);
+    throw error;
+  }
+};
+
+// Update RFQ batch (simplified interface for UnifiedRFQTool)
+export const updateRFQBatch = async (
+  batchId: string,
+  results: any[],
+  pricingSettings: PricingSettings,
+  selectedCarriers: { [carrierId: string]: boolean },
+  selectedCustomer?: string
+): Promise<void> => {
+  try {
+    console.log('🔄 Updating RFQ batch:', batchId);
+
+    // Calculate summary statistics
+    const totalQuotes = results.reduce((sum, result) => sum + (result.quotes?.length || 0), 0);
+    const bestTotalPrice = results.length > 0 ? 
+      Math.min(...results.flatMap(r => r.quotes?.map((q: any) => q.customerPrice || 0) || [0])) : 0;
+    const totalProfit = results.reduce((sum, result) => 
+      sum + (result.quotes?.reduce((qSum: number, q: any) => qSum + (q.profit || 0), 0) || 0), 0);
+
+    // First try to update mass_rfq_batches
+    const { error: massRfqError } = await supabase
+      .from('mass_rfq_batches')
+      .update({
+        results_data: results,
+        pricing_settings: pricingSettings,
+        selected_carriers: selectedCarriers,
+        customer_name: selectedCustomer,
+        total_quotes_received: totalQuotes,
+        best_total_price: bestTotalPrice,
+        total_profit: totalProfit,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', batchId);
+
+    if (!massRfqError) {
+      console.log('✅ Updated mass_rfq_batches successfully');
+      return;
+    }
+
+    // Fallback to updating rfq_batches
+    const { error: rfqBatchError } = await supabase
+      .from('rfq_batches')
+      .update({
+        pricing_settings: pricingSettings,
+        selected_carriers: selectedCarriers,
+        customer_name: selectedCustomer,
+        total_quotes: totalQuotes,
+        best_total_price: bestTotalPrice,
+        total_profit: totalProfit,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', batchId);
+
+    if (rfqBatchError) {
+      console.error('❌ Failed to update RFQ batch:', rfqBatchError);
+      throw new Error(`Failed to update RFQ batch: ${rfqBatchError.message}`);
+    }
+
+    console.log('✅ Updated rfq_batches successfully');
+  } catch (error) {
+    console.error('❌ Error updating RFQ batch:', error);
+    throw error;
+  }
+};
+
 // Generate automatic batch name
 export const generateBatchName = (rfqData: RFQRow[], customerName?: string): string => {
   const timestamp = new Date().toLocaleString('en-US', {

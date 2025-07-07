@@ -6,8 +6,6 @@ import {
   Project44RateQuoteRequest,
   Project44RateQuoteResponse,
   CapacityProvider,
-  ServiceLevelInfo,
-  ServiceLevelsCollection,
   CapacityProviderIdentifier,
   LineItem,
   AccessorialService,
@@ -324,19 +322,6 @@ export class Project44APIClient {
     return [carrierGroup];
   }
 
-  // Helper method to find the group code for a given carrier ID
-  private findGroupCodeForCarrier(carrierId: string): string {
-    for (const group of this.carrierGroups) {
-      const carrier = group.carriers.find(c => c.id === carrierId);
-      if (carrier) {
-        console.log(`🔍 Found carrier ${carrierId} in group ${group.groupCode}`);
-        return group.groupCode;
-      }
-    }
-    console.log(`⚠️ Carrier ${carrierId} not found in any group, using Default`);
-    return 'Default';
-  }
-
   private getCarrierNameFromAccountInfo(accountInfo: CapacityProviderAccountInfos, scac?: string): string {
     // Map common SCAC codes to proper carrier names
     const scacToName: { [key: string]: string } = {
@@ -411,54 +396,17 @@ export class Project44APIClient {
       .trim();
   }
 
-  async getServiceLevelsByCarriers(carrierIds: string[], isVolumeMode: boolean = false, isFTLMode: boolean = false): Promise<ServiceLevelInfo[]> {
-    const token = await this._getAccessToken();
-    
-    const modeDescription = isVolumeMode ? 'Volume LTL (VLTL)' : isFTLMode ? 'Full Truckload' : 'Standard LTL';
-    console.log(`🎯 Fetching service levels for ${modeDescription} carriers:`, carrierIds);
-
-    const isDev = import.meta.env.DEV;
-    const baseUrl = isDev ? '/api/project44' : '/.netlify/functions/project44-proxy';
-    
-    // Use the appropriate endpoint based on mode
-    let endpoint = '/api/v4/ltl/service-levels';
-    if (isVolumeMode) {
-      endpoint = '/api/v4/vltl/service-levels';
-    } else if (isFTLMode) {
-      endpoint = '/api/v4/truckload/service-levels';
-    }
-
-    const response = await fetch(`${baseUrl}${endpoint}`, {
-      method: 'GET',
-      headers: {
-        'Authorization': `Bearer ${token}`,
-        'Content-Type': 'application/json',
-        'Accept': 'application/json'
+  // Helper method to find the group code for a given carrier ID
+  private findGroupCodeForCarrier(carrierId: string): string {
+    for (const group of this.carrierGroups) {
+      const carrier = group.carriers.find(c => c.id === carrierId);
+      if (carrier) {
+        console.log(`🔍 Found carrier ${carrierId} in group ${group.groupCode}`);
+        return group.groupCode;
       }
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error('❌ Failed to fetch service levels:', response.status, errorText);
-      throw new Error(`Failed to fetch service levels: ${response.status} - ${errorText}`);
     }
-
-    const data: ServiceLevelsCollection = await response.json();
-    console.log('🎯 Raw service levels response:', data);
-
-    // Extract service levels from the response
-    const serviceLevels: ServiceLevelInfo[] = [];
-    
-    if (data.serviceLevels) {
-      data.serviceLevels.forEach(response => {
-        if (response.serviceLevels) {
-          serviceLevels.push(...response.serviceLevels);
-        }
-      });
-    }
-
-    console.log(`✅ Loaded ${serviceLevels.length} service levels for ${modeDescription}`);
-    return serviceLevels;
+    console.log(`⚠️ Carrier ${carrierId} not found in any group, using Default`);
+    return 'Default';
   }
 
   async getQuotes(

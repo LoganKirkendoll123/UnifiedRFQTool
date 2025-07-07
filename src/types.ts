@@ -129,53 +129,6 @@ export interface PricingSettings {
   fallbackMarkupPercentage?: number;
 }
 
-// Updated to match Project44 schema
-export interface CapacityProviderIdentifier {
-  type: 'SCAC' | 'DOT_NUMBER' | 'MC_NUMBER' | 'P44_EU' | 'SYSTEM' | 'P44_GLOBAL' | 'VAT';
-  value: string;
-}
-
-export interface CapacityProvider {
-  capacityProviderIdentifiers: CapacityProviderIdentifier[];
-  name: string;
-  supportedServices: CapacityProviderService[];
-  type: 'CARRIER' | 'BROKER';
-  // Add service levels support
-  supportedServiceLevels?: ServiceLevelInfo[];
-}
-
-export interface CapacityProviderService {
-  mode: 'PARCEL' | 'LTL' | 'VOLUME_LTL' | 'TRUCKLOAD' | 'OCEAN' | 'RAIL';
-  type: 'RATING' | 'DISPATCH' | 'TRACKING' | 'IMAGING';
-  // Add service levels to services
-  serviceLevels?: ServiceLevelInfo[];
-}
-
-// New interface for service level information from Project44
-export interface ServiceLevelInfo {
-  code: string;
-  name: string;
-  description?: string;
-  mode: 'LTL' | 'VOLUME_LTL' | 'TRUCKLOAD' | 'PARCEL';
-  category: 'STANDARD' | 'EXPEDITED' | 'GUARANTEED' | 'ECONOMY' | 'PREMIUM';
-  guaranteedDelivery?: boolean;
-  transitDaysMin?: number;
-  transitDaysMax?: number;
-  cutoffTime?: string;
-  availableDays?: string[]; // ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN']
-}
-
-// Enhanced service level response from Project44
-export interface ServiceLevelResponse {
-  serviceLevels: ServiceLevelInfo[];
-  capacityProviderIdentifier?: CapacityProviderIdentifier;
-  lastUpdated?: string;
-}
-
-export interface ServiceLevelsCollection {
-  serviceLevels: ServiceLevelResponse[];
-}
-
 export interface Address {
   addressLines: string[];
   city: string;
@@ -192,6 +145,49 @@ export interface GeoCoordinates {
 export interface MonetaryValue {
   amount: number;
   currency: string;
+}
+
+// Updated to match Project44 schema
+export interface CapacityProviderIdentifier {
+  type: 'SCAC' | 'DOT_NUMBER' | 'MC_NUMBER' | 'P44_EU' | 'SYSTEM' | 'P44_GLOBAL' | 'VAT';
+  value: string;
+}
+
+export interface CapacityProvider {
+  capacityProviderIdentifiers: CapacityProviderIdentifier[];
+  name: string;
+  supportedServices: CapacityProviderService[];
+  type: 'CARRIER' | 'BROKER';
+  supportedServiceLevels?: ServiceLevelInfo[];
+}
+
+export interface CapacityProviderService {
+  mode: 'PARCEL' | 'LTL' | 'VOLUME_LTL' | 'TRUCKLOAD' | 'OCEAN' | 'RAIL';
+  type: 'RATING' | 'DISPATCH' | 'TRACKING' | 'IMAGING';
+  serviceLevels?: ServiceLevelInfo[];
+}
+
+export interface ServiceLevelInfo {
+  code: string;
+  name: string;
+  description?: string;
+  mode: 'LTL' | 'VOLUME_LTL' | 'TRUCKLOAD' | 'PARCEL';
+  category: 'STANDARD' | 'EXPEDITED' | 'GUARANTEED' | 'ECONOMY' | 'PREMIUM';
+  guaranteedDelivery?: boolean;
+  transitDaysMin?: number;
+  transitDaysMax?: number;
+  cutoffTime?: string;
+  availableDays?: string[];
+}
+
+export interface ServiceLevelResponse {
+  serviceLevels: ServiceLevelInfo[];
+  capacityProviderIdentifier?: CapacityProviderIdentifier;
+  lastUpdated?: string;
+}
+
+export interface ServiceLevelsCollection {
+  serviceLevels: ServiceLevelResponse[];
 }
 
 // Enhanced Project44 API structures
@@ -339,7 +335,7 @@ export interface ProcessingResult {
 }
 
 // Enhanced result type for smart quoting
-interface SmartQuotingResult extends ProcessingResult {
+export interface SmartQuotingResult extends ProcessingResult {
   quotingDecision: 'freshx' | 'project44-standard' | 'project44-volume' | 'project44-dual';
   quotingReason: string;
 }
@@ -589,13 +585,13 @@ export interface CapacityProviderAccountInfosCollection {
   accounts: CapacityProviderAccountInfos[];
 }
 
+export interface CapacityProviderAccountGroup {
+  accounts: { code: string }[];
+  code?: string;
+}
+
 export interface CapacityProviderAccountGroupInfo {
   code: string;
   id?: number;
   name: string;
-}
-
-export interface CapacityProviderAccountGroup {
-  accounts: { code: string }[];
-  code?: string;
 }

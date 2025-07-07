@@ -140,6 +140,7 @@ export const UnifiedRFQTool: React.FC<UnifiedRFQToolProps> = ({
   const [isSaving, setIsSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [formError, setFormError] = useState<string>('');
+  const [showPastBatchManager, setShowPastBatchManager] = useState(false);
   
   // Local state for pricing settings and customer selection
   const [pricingSettings, setPricingSettings] = useState<PricingSettings>(initialPricingSettings);
@@ -476,6 +477,11 @@ export const UnifiedRFQTool: React.FC<UnifiedRFQToolProps> = ({
       }
     );
   };
+
+  const handlePastBatchTab = () => {
+    setShowPastBatchManager(true);
+  };
+  
   const handleSaveResults = async () => {
     if (rfqProcessor.results.length === 0) {
       alert('No results to save. Please process some RFQs first.');

@@ -99,21 +99,6 @@ export const PastBatchManager: React.FC<PastBatchManagerProps> = ({
       setOriginalResponses(responses);
       setNewResponses([]); // Clear any previous new responses
       
-      // Auto-load batch settings when a batch is selected
-      if (onBatchSettingsLoad) {
-        const batchCustomer = batch.customer_name || '';
-        const batchCarriers = batch.selected_carriers || {};
-        const batchPricingSettings = batch.pricing_settings || pricingSettings;
-        
-        console.log(`🔄 Auto-loading batch settings:`, {
-          customer: batchCustomer,
-          carriers: Object.keys(batchCarriers).length,
-          pricingSettings: batchPricingSettings
-        });
-        
-        onBatchSettingsLoad(batchCustomer, batchCarriers, batchPricingSettings);
-      }
-      
       console.log(`✅ Loaded ${requests.length} requests and ${responses.length} responses`);
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Failed to load batch details';

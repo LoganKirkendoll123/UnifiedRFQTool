@@ -37,12 +37,6 @@ export const CustomerSelection: React.FC<CustomerSelectionProps> = ({
     setLoading(true);
     setError('');
     try {
-      // Check if Supabase is properly configured
-      const { connected, error: connectionError } = await checkSupabaseConnection();
-      if (!connected) {
-        throw new Error(`Supabase not configured: ${connectionError}`);
-      }
-
       // Get unique customers from CustomerCarriers table
       console.log('🔍 Loading all customers from CustomerCarriers...');
       
@@ -81,10 +75,12 @@ export const CustomerSelection: React.FC<CustomerSelectionProps> = ({
     } catch (err) {
       let errorMsg = 'Failed to load customers';
       if (err instanceof Error) {
-        if (err.message.includes('Supabase not configured')) {
-          errorMsg = 'Supabase database not configured. Please set up your Supabase credentials.';
-        } else if (err.message.includes('Failed to fetch')) {
+        if (err.message.includes('Failed to fetch') || err.message.includes('fetch')) {
           errorMsg = 'Unable to connect to database. Please check your Supabase configuration.';
+        } else if (err.message.includes('JWT') || err.message.includes('Invalid API key')) {
+          errorMsg = 'Invalid Supabase credentials. Please check your API key.';
+        } else if (err.message.includes('permission') || err.message.includes('policy')) {
+          errorMsg = 'Database access denied. Please check your row-level security policies.';
         } else {
           errorMsg = err.message;
         }

@@ -45,8 +45,15 @@ export const checkSupabaseConnection = async () => {
     }
 
     // Test connection using an actual table from the schema
-    const { data, error } = await supabase.from('CustomerCarriers').select('MarkupId').limit(1);
+    // Try to access a table we know exists in the schema - CustomerCarriers
+    const { error } = await supabase.from('CustomerCarriers').select('MarkupId').limit(1);
     if (error) {
+      // If we get a permissions error or table not found, that's still a valid connection
+      // Only fail on network/auth errors
+      if (error.code === 'PGRST301' || error.code === '42P01' || error.message.includes('permission')) {
+        // These are permission/table issues, but connection is working
+        return { connected: true, error: null };
+      }
       throw error;
     }
     return { connected: true, error: null };

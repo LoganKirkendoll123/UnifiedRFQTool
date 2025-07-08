@@ -113,91 +113,139 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
     try {
       console.log('📊 Loading carriers from Shipments table...');
       
-      // Load all shipments in batches to get carrier data
-      let allShipments: any[] = [];
-      let from = 0;
-      const batchSize = 500; // Reduced batch size to avoid limits
-      let hasMore = true;
-      
-      while (hasMore) {
-        console.log(`📋 Loading shipments batch: records ${from}-${from + batchSize - 1}`);
-        
-        const { data, error } = await retryWithBackoff(async () => {
-          return await supabase
-            .from('Shipments')
-            .select('Customer, "Booked Carrier", "Quoted Carrier", Revenue, "Carrier Expense", SCAC')
-            .not('Customer', 'is', null)
-            .not('Booked Carrier', 'is', null)
-            .gt('Revenue', 0)
-            .range(from, from + batchSize - 1);
-        });
-        
-        if (error) {
-          console.error(`❌ Failed to load shipments batch ${from}-${from + batchSize - 1}:`, error);
-          throw error;
-        }
-        
-        if (data && data.length > 0) {
-          allShipments = [...allShipments, ...data];
-          console.log(`📋 Loaded shipments batch: ${data.length} records (total loaded: ${allShipments.length})`);
-          from += batchSize;
-          hasMore = data.length === batchSize;
-        } else {
-          hasMore = false;
-        }
-        
-        // Longer delay between batches to respect rate limits
-        await new Promise(resolve => setTimeout(resolve, 500));
-      }
-
-      console.log(`✅ Loaded ${allShipments.length} shipments total`);
-
-      // Group by carrier (prefer Booked Carrier, fallback to Quoted Carrier)
-      const carrierGroups = new Map<string, {
-        name: string;
-        scac?: string;
-        shipments: any[];
-        customers: Set<string>;
-        totalRevenue: number;
-      }>();
-
-      allShipments.forEach(shipment => {
-        const carrierName = shipment['Booked Carrier'] || shipment['Quoted Carrier'];
-        const customer = shipment.Customer;
-        const revenue = parseFloat(shipment.Revenue) || 0;
-        const scac = shipment.SCAC;
-
-        if (!carrierName || !customer || revenue <= 0) return;
-
-        if (!carrierGroups.has(carrierName)) {
-          carrierGroups.set(carrierName, {
-            name: carrierName,
-            scac: scac || undefined,
-            shipments: [],
-            customers: new Set(),
-            totalRevenue: 0
-          });
-        }
-
-        const group = carrierGroups.get(carrierName)!;
-        group.shipments.push(shipment);
-        group.customers.add(customer);
-        group.totalRevenue += revenue;
+      // Step 1: Get unique booked carriers efficiently
+      console.log('🔍 Getting unique booked carriers...');
+      const { data: bookedCarriers, error: bookedError } = await retryWithBackoff(async () => {
+        return await supabase
+          .from('Shipments')
+          .select('"Booked Carrier"')
+          .not('"Booked Carrier"', 'is', null)
+          .gt('Revenue', 0)
+          .limit(5000); // Reasonable limit for distinct operation
       });
 
-      // Convert to CarrierOption array and sort by revenue
-      const carrierOptions: CarrierOption[] = Array.from(carrierGroups.values())
-        .map(group => ({
-          name: group.name,
-          scac: group.scac,
-          shipmentCount: group.shipments.length,
-          totalRevenue: group.totalRevenue,
-          customers: Array.from(group.customers)
-        }))
-        .sort((a, b) => b.totalRevenue - a.totalRevenue);
+      if (bookedError) {
+        console.error('❌ Failed to load booked carriers:', bookedError);
+        throw bookedError;
+      }
+
+      // Step 2: Get unique quoted carriers efficiently
+      console.log('🔍 Getting unique quoted carriers...');
+      const { data: quotedCarriers, error: quotedError } = await retryWithBackoff(async () => {
+        return await supabase
+          .from('Shipments')
+          .select('"Quoted Carrier"')
+          .not('"Quoted Carrier"', 'is', null)
+          .gt('Revenue', 0)
+          .limit(5000); // Reasonable limit for distinct operation
+      });
+
+      if (quotedError) {
+        console.error('❌ Failed to load quoted carriers:', quotedError);
+        throw quotedError;
+      }
+
+      // Step 3: Combine and deduplicate carrier names
+      const allCarrierNames = new Set<string>();
+      
+      bookedCarriers?.forEach(record => {
+        const carrierName = record['Booked Carrier'];
+        if (carrierName) {
+          allCarrierNames.add(carrierName);
+        }
+      });
+
+      quotedCarriers?.forEach(record => {
+        const carrierName = record['Quoted Carrier'];
+        if (carrierName) {
+          allCarrierNames.add(carrierName);
+        }
+      });
+
+      console.log(`✅ Found ${allCarrierNames.size} unique carriers`);
+
+      // Step 4: For each carrier, get aggregated statistics efficiently
+      const carrierPromises = Array.from(allCarrierNames).map(async (carrierName) => {
+        try {
+          // Get stats for this carrier (booked + quoted)
+          const { data: stats, error: statsError } = await retryWithBackoff(async () => {
+            return await supabase
+              .from('Shipments')
+              .select('Customer, Revenue, "Carrier Expense", SCAC')
+              .or(`"Booked Carrier".eq.${carrierName},"Quoted Carrier".eq.${carrierName}`)
+              .not('Customer', 'is', null)
+              .gt('Revenue', 0)
+              .limit(1000); // Limit per carrier to avoid huge queries
+          });
+
+          if (statsError) {
+            console.error(`❌ Failed to load stats for ${carrierName}:`, statsError);
+            return null;
+          }
+
+          if (!stats || stats.length === 0) {
+            return null;
+          }
+
+          // Calculate aggregated stats
+          const customers = new Set<string>();
+          let totalRevenue = 0;
+          let scac: string | undefined;
+
+          stats.forEach(record => {
+            const customer = record.Customer;
+            const revenue = parseFloat(record.Revenue) || 0;
+            
+            if (customer) {
+              customers.add(customer);
+            }
+            totalRevenue += revenue;
+            
+            if (!scac && record.SCAC) {
+              scac = record.SCAC;
+            }
+          });
+
+          return {
+            name: carrierName,
+            scac,
+            shipmentCount: stats.length,
+            totalRevenue,
+            customers: Array.from(customers)
+          };
+        } catch (error) {
+          console.error(`❌ Failed to process carrier ${carrierName}:`, error);
+          return null;
+        }
+      });
+
+      // Step 5: Execute all carrier queries with rate limiting
+      const carrierOptions: CarrierOption[] = [];
+      const batchSize = 5; // Process 5 carriers at a time to avoid overwhelming the database
+      
+      for (let i = 0; i < carrierPromises.length; i += batchSize) {
+        const batch = carrierPromises.slice(i, i + batchSize);
+        console.log(`📊 Processing carriers batch ${Math.floor(i / batchSize) + 1}/${Math.ceil(carrierPromises.length / batchSize)}...`);
+        
+        const batchResults = await Promise.all(batch);
+        
+        batchResults.forEach(result => {
+          if (result) {
+            carrierOptions.push(result);
+          }
+        });
+        
+        // Delay between batches
+        if (i + batchSize < carrierPromises.length) {
+          await new Promise(resolve => setTimeout(resolve, 1000));
+        }
+      }
+
+      // Sort by total revenue (highest first)
+      carrierOptions.sort((a, b) => b.totalRevenue - a.totalRevenue);
 
       setCarriers(carrierOptions);
-      console.log(`✅ Processed ${carrierOptions.length} unique carriers`);
+      console.log(`✅ Processed ${carrierOptions.length} carriers with statistics`);
       
     } catch (error) {
       console.error('❌ Failed to load carriers:', error);

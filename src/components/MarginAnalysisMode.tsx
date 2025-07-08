@@ -216,6 +216,21 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
     try {
       console.log(`📅 Loading shipment history for ${customer} from ${dateRange.startDate} to ${dateRange.endDate}`);
       
+      // Convert date range to 5-digit Excel serial format
+      const convertToExcelSerial = (dateString: string): number => {
+        const date = new Date(dateString);
+        // Excel epoch starts January 1, 1900, but JavaScript starts January 1, 1970
+        // There are 25567 days between 1900-01-01 and 1970-01-01
+        const excelEpoch = new Date(1900, 0, 1);
+        const daysDiff = Math.floor((date.getTime() - excelEpoch.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+        return daysDiff;
+      };
+      
+      const startSerial = convertToExcelSerial(dateRange.startDate);
+      const endSerial = convertToExcelSerial(dateRange.endDate);
+      
+      console.log(`📊 Date conversion: ${dateRange.startDate} (${startSerial}) to ${dateRange.endDate} (${endSerial})`);
+      
       // First, let's find the exact customer name in the database (case-insensitive)
       const { data: customerCheck, error: customerError } = await supabase
         .from('Shipments')
@@ -315,19 +330,26 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
         .not('Tot Weight', 'is', null)
         .limit(50);
       
-      // Add date range filtering if we have pickup dates
+      // Add date range filtering using 5-digit serial dates
       if (startTimestamp) {
-        console.log(`🔍 Adding start date filter: >= ${startTimestamp}`);
-        query = query.gte('"Scheduled Pickup Date"', startTimestamp);
+        query = query.gte('"Scheduled Pickup Date"', startSerial);
       }
       if (endTimestamp) {
-        console.log(`🔍 Adding end date filter: <= ${endTimestamp}`);
-        query = query.lte('"Scheduled Pickup Date"', endTimestamp);
+        query = query.lte('"Scheduled Pickup Date"', endSerial);
       }
       
       const { data, error } = await query;
       
       if (error) throw error;
+      
+      console.log(`📋 Query result: ${data?.length || 0} shipments found for ${customer}`);
+      
+      // Debug: Show sample pickup dates
+      if (data && data.length > 0) {
+        const sampleDates = data.slice(0, 3).map(d => d['Scheduled Pickup Date']).filter(Boolean);
+        console.log(`📅 Sample pickup dates from database:`, sampleDates);
+        console.log(`📊 Date range comparison: Filtering for ${startSerial} to ${endSerial}`);
+      }
       
       console.log(`📋 Query returned ${data?.length || 0} shipments for ${customer} with date filtering`);
       
@@ -394,6 +416,14 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
       console.log(`📋 Filtered to ${validShipments.length} valid shipments for ${customer} (from ${shipments.length} total records)`);
       
       return validShipments;
+      
+      // Additional debugging
+      if (shipments.length === 0 && data && data.length > 0) {
+        console.log(`⚠️ All ${data.length} shipments were filtered out during validation`);
+        console.log('📊 Sample raw data:', data.slice(0, 2));
+      }
+      
+      return shipments;
     } catch (error) {
       console.error(`❌ Failed to load shipment history for ${customer}:`, error);
       return [];

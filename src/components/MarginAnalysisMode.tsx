@@ -27,11 +27,13 @@ import {
 import { Project44APIClient, FreshXAPIClient, CarrierGroup, Carrier } from '../utils/apiClient';
 import { formatCurrency } from '../utils/pricingCalculator';
 import { PricingSettings, RFQRow } from '../types';
+import { useRFQProcessor } from '../hooks/useRFQProcessor';
 import { supabase } from '../utils/supabase';
 
 interface MarginAnalysisModeProps {
   project44Client: Project44APIClient | null;
   freshxClient: FreshXAPIClient | null;
+  rfqProcessor: ReturnType<typeof useRFQProcessor>;
   pricingSettings: PricingSettings;
   selectedCustomer: string;
   onMarginRecommendation?: (customer: string, carrier: string, recommendedMargin: number) => void;
@@ -58,6 +60,7 @@ interface CustomerMarginAnalysis {
 export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
   project44Client,
   freshxClient,
+  rfqProcessor,
   pricingSettings,
   selectedCustomer,
   onMarginRecommendation
@@ -563,8 +566,9 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
         try {
           console.log(`🚛 Processing ${rfqs.length} RFQs for ${customerName} using carrier group ${selectedCarrierGroup} (comparing to SCAC ${selectedCarrierSCAC})`);
           
-          // Use the selected carrier group for processing
-          const results = await processor.processRFQsForAccountGroup(rfqs, selectedCarrierGroup, {
+          // Use the rfqProcessor from props for processing
+          const results = await rfqProcessor.processMultipleRFQs(rfqs, {
+            carrierSelection: { [selectedCarrierGroup]: true },
             pricingSettings,
             selectedCustomer: customerName,
             batchName: `Margin Analysis - ${customerName}`,
@@ -573,7 +577,7 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
 
           // Calculate new carrier costs from quotes
           results.forEach(result => {
-            if (result.status === 'success' && result.quotes.length > 0) {
+            if (result.status === 'success' && result.quotes && result.quotes.length > 0) {
               // Find the best quote (lowest carrier cost)
               const bestQuote = result.quotes.reduce((best, current) => 
                 current.carrierTotalRate < best.carrierTotalRate ? current : best

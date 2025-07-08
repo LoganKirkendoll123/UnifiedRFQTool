@@ -90,6 +90,7 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
   const [loading, setLoading] = useState(true);
   const [analyzing, setAnalyzing] = useState(false);
   const [error, setError] = useState<string>('');
+  const [connectionError, setConnectionError] = useState<string>('');
   const [progress, setProgress] = useState({ current: 0, total: 0, item: '' });
   const [overallStats, setOverallStats] = useState({
     dateRange: '',
@@ -121,6 +122,7 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
   }, []);
 
   const loadCustomers = async () => {
+    setConnectionError('');
     try {
       console.log('🔍 Loading all customers from Shipments table...');
       
@@ -129,13 +131,32 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
         .select('Customer')
         .not('Customer', 'is', null);
       
-      if (error) throw error;
+      if (error) {
+        console.error('❌ Supabase query error:', error);
+        setConnectionError(`Database connection error: ${error.message}. Please check your Supabase configuration.`);
+        setCustomers([]);
+        return;
+      }
+      
+      if (!data) {
+        setConnectionError('No data returned from Shipments table. Please check your database permissions.');
+        setCustomers([]);
+        return;
+      }
       
       const uniqueCustomers = [...new Set(data.map(d => d.Customer).filter(Boolean))].sort();
       setCustomers(uniqueCustomers);
+      
+      if (uniqueCustomers.length === 0) {
+        setConnectionError('Shipments table is empty or contains no valid customer records. Please ensure your historical shipment data is loaded into the Shipments table.');
+      }
+      
       console.log(`✅ Loaded ${uniqueCustomers.length} customers for margin analysis`);
     } catch (error) {
       console.error('❌ Failed to load customers:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+      setConnectionError(`Failed to connect to database: ${errorMessage}. Please check your Supabase connection and try again.`);
+      setCustomers([]);
     } finally {
       setLoading(false);
     }
@@ -315,8 +336,14 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
       return;
     }
     
+    // Check for connection errors first
+    if (connectionError) {
+      setError(connectionError);
+      return;
+    }
+    
     if (customers.length === 0) {
-      const errorMsg = 'No customers found in database. Please check your Supabase connection and data.';
+      const errorMsg = 'No customers available for analysis. Please ensure your Shipments table contains historical data with customer information.';
       setError(errorMsg);
       console.error('❌', errorMsg);
       return;
@@ -750,13 +777,15 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
           <div>
             <h3 className="text-lg font-semibold text-gray-900">Comprehensive Margin Analysis</h3>
             <p className="text-sm text-gray-600 mt-1">
-              Analyze {customers.length} customers against {Object.values(selectedCarriers).filter(Boolean).length} selected carriers
+              {loading ? 'Loading customers...' : 
+               connectionError ? 'Database connection issue' :
+               `Analyze ${customers.length} customers against ${Object.values(selectedCarriers).filter(Boolean).length} selected carriers`}
             </p>
           </div>
           
           <button
             onClick={runMarginAnalysis}
-            disabled={analyzing || !project44Client || Object.values(selectedCarriers).filter(Boolean).length === 0}
+            disabled={analyzing || !project44Client || Object.values(selectedCarriers).filter(Boolean).length === 0 || connectionError || customers.length === 0}
             className="flex items-center space-x-2 px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors"
           >
             {analyzing ? (
@@ -772,6 +801,51 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
             )}
           </button>
         </div>
+
+        {/* Connection Error */}
+        {connectionError && (
+          <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-4">
+            <div className="flex items-start space-x-2 text-red-800">
+              <AlertCircle className="h-4 w-4 flex-shrink-0 mt-0.5" />
+              <div>
+                <div className="text-sm font-medium">Database Connection Issue</div>
+                <div className="text-sm mt-1">{connectionError}</div>
+                <button
+                  onClick={loadCustomers}
+                  className="mt-2 text-xs bg-red-100 hover:bg-red-200 text-red-800 px-2 py-1 rounded transition-colors"
+                >
+                  Retry Connection
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+        
+        {/* Loading State */}
+        {loading && (
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
+            <div className="flex items-center space-x-2 text-blue-800">
+              <Loader className="h-4 w-4 animate-spin" />
+              <span className="text-sm">Loading customer data from Shipments table...</span>
+            </div>
+          </div>
+        )}
+        
+        {/* No customers but no error */}
+        {!loading && !connectionError && customers.length === 0 && (
+          <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-4">
+            <div className="flex items-center space-x-2 text-yellow-800">
+              <AlertTriangle className="h-4 w-4" />
+              <div>
+                <div className="text-sm font-medium">No Customer Data Available</div>
+                <div className="text-sm mt-1">
+                  The Shipments table appears to be empty or contains no customer records. 
+                  To use margin analysis, please ensure your historical shipment data is loaded into the Shipments table.
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
 
         {Object.values(selectedCarriers).filter(Boolean).length === 0 && (
           <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-4">
@@ -796,7 +870,8 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
           </div>
         )}
         
-        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+        {!connectionError && !loading && (
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
           <div className="text-sm text-blue-800">
             <p className="font-medium mb-1">Analysis Process:</p>
             <ol className="list-decimal list-inside space-y-1 text-xs">
@@ -807,7 +882,8 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
               <li>Generate margin recommendations based on price differences</li>
             </ol>
           </div>
-        </div>
+          </div>
+        )}
       </div>
 
       {/* Progress */}

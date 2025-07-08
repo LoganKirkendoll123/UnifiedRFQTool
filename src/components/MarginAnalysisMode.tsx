@@ -248,10 +248,12 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
       
       // Add date range filtering if we have pickup dates
       if (dateRange.startDate) {
-        query = query.gte('"Scheduled Pickup Date"', dateRange.startDate);
+        const startTimestamp = new Date(dateRange.startDate).getTime();
+        query = query.gte('"Scheduled Pickup Date"', startTimestamp);
       }
       if (dateRange.endDate) {
-        query = query.lte('"Scheduled Pickup Date"', dateRange.endDate);
+        const endTimestamp = new Date(dateRange.endDate).getTime();
+        query = query.lte('"Scheduled Pickup Date"', endTimestamp);
       }
       
       const { data, error } = await query;

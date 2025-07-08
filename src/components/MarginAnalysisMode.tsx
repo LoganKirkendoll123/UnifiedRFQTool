@@ -16,6 +16,7 @@ import {
   RefreshCw,
   Save,
   Award,
+  Calendar,
   Package,
   MapPin,
   Truck,
@@ -89,11 +90,27 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
   const [analyzing, setAnalyzing] = useState(false);
   const [progress, setProgress] = useState({ current: 0, total: 0, item: '' });
   const [overallStats, setOverallStats] = useState({
+    dateRange: '',
+    totalShipments: 0,
     totalCustomers: 0,
     totalCarriers: 0,
     totalCombinations: 0,
     avgMarginImprovement: 0,
     totalOpportunity: 0
+  });
+
+  // Date range state
+  const [dateRange, setDateRange] = useState({
+    startDate: (() => {
+      const date = new Date();
+      date.setMonth(date.getMonth() - 12); // Default to last 12 months
+      return date.toISOString().split('T')[0];
+    })(),
+    endDate: (() => {
+      const date = new Date();
+      date.setDate(date.getDate() - 1); // Yesterday to avoid today's incomplete data
+      return date.toISOString().split('T')[0];
+    })()
   });
 
   useEffect(() => {
@@ -174,7 +191,9 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
 
   const loadShipmentHistoryForCustomer = async (customer: string): Promise<ShipmentRecord[]> => {
     try {
-      const { data, error } = await supabase
+      console.log(`📅 Loading shipment history for ${customer} from ${dateRange.startDate} to ${dateRange.endDate}`);
+      
+      let query = supabase
         .from('Shipments')
         .select(`
           "Invoice #",
@@ -202,7 +221,17 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
         .not('Zip_1', 'is', null)
         .not('Tot Packages', 'is', null)
         .not('Tot Weight', 'is', null)
-        .limit(25); // Limit per customer for performance
+        .limit(50); // Increased limit for better analysis
+      
+      // Add date range filtering if we have pickup dates
+      if (dateRange.startDate) {
+        query = query.gte('"Scheduled Pickup Date"', dateRange.startDate);
+      }
+      if (dateRange.endDate) {
+        query = query.lte('"Scheduled Pickup Date"', dateRange.endDate);
+      }
+      
+      const { data, error } = await query;
       
       if (error) throw error;
       
@@ -236,6 +265,8 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
         s.tot_packages > 0 &&
         parseFloat(s.tot_weight.replace(/[^\d.]/g, '')) > 0
       );
+      
+      console.log(`📋 Loaded ${shipments.length} valid shipments for ${customer} in date range`);
     } catch (error) {
       console.error(`❌ Failed to load shipment history for ${customer}:`, error);
       return [];
@@ -285,6 +316,8 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
       const processor = new RFQProcessor(project44Client, freshxClient);
       const allResults: CustomerCarrierMarginResult[] = [];
       
+      let totalShipmentsProcessed = 0;
+      
       for (let i = 0; i < customers.length; i++) {
         const customer = customers[i];
         setProgress({ 
@@ -302,6 +335,7 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
             continue;
           }
           
+          totalShipmentsProcessed += shipmentHistory.length;
           console.log(`📋 Analyzing ${shipmentHistory.length} shipments for ${customer}`);
           
           // Group historical and current rates by carrier
@@ -459,6 +493,8 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
         const totalOpportunity = allResults.reduce((sum, r) => sum + r.totalOpportunity, 0);
         
         setOverallStats({
+          dateRange: `${dateRange.startDate} to ${dateRange.endDate}`,
+          totalShipments: totalShipmentsProcessed,
           totalCustomers,
           totalCarriers,
           totalCombinations: allResults.length,
@@ -475,6 +511,32 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
       setAnalyzing(false);
       setProgress({ current: 0, total: 0, item: '' });
     }
+  };
+
+  const setPresetDateRange = (preset: string) => {
+    const endDate = new Date();
+    endDate.setDate(endDate.getDate() - 1); // Yesterday
+    const startDate = new Date();
+    
+    switch (preset) {
+      case '3months':
+        startDate.setMonth(startDate.getMonth() - 3);
+        break;
+      case '6months':
+        startDate.setMonth(startDate.getMonth() - 6);
+        break;
+      case '12months':
+        startDate.setMonth(startDate.getMonth() - 12);
+        break;
+      case '24months':
+        startDate.setMonth(startDate.getMonth() - 24);
+        break;
+    }
+    
+    setDateRange({
+      startDate: startDate.toISOString().split('T')[0],
+      endDate: endDate.toISOString().split('T')[0]
+    });
   };
 
   const saveAllMarginRecommendations = () => {
@@ -526,6 +588,96 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
         />
       </div>
 
+      {/* Date Range Selection */}
+      <div className="bg-white rounded-lg shadow-md p-6">
+        <div className="flex items-center space-x-3 mb-4">
+          <div className="bg-purple-600 p-2 rounded-lg">
+            <Calendar className="h-5 w-5 text-white" />
+          </div>
+          <div>
+            <h3 className="text-lg font-semibold text-gray-900">Historical Data Date Range</h3>
+            <p className="text-sm text-gray-600">
+              Select the time period for historical shipment analysis. More recent data provides better market relevance.
+            </p>
+          </div>
+        </div>
+        
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          {/* Preset Buttons */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-3">Quick Select</label>
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                onClick={() => setPresetDateRange('3months')}
+                className="px-3 py-2 text-sm border border-gray-300 rounded-md hover:bg-gray-50 transition-colors"
+              >
+                Last 3 Months
+              </button>
+              <button
+                onClick={() => setPresetDateRange('6months')}
+                className="px-3 py-2 text-sm border border-gray-300 rounded-md hover:bg-gray-50 transition-colors"
+              >
+                Last 6 Months
+              </button>
+              <button
+                onClick={() => setPresetDateRange('12months')}
+                className="px-3 py-2 text-sm bg-blue-100 text-blue-800 border border-blue-300 rounded-md hover:bg-blue-200 transition-colors"
+              >
+                Last 12 Months
+              </button>
+              <button
+                onClick={() => setPresetDateRange('24months')}
+                className="px-3 py-2 text-sm border border-gray-300 rounded-md hover:bg-gray-50 transition-colors"
+              >
+                Last 24 Months
+              </button>
+            </div>
+          </div>
+          
+          {/* Custom Date Range */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-3">Custom Date Range</label>
+            <div className="space-y-3">
+              <div>
+                <label className="block text-xs text-gray-600 mb-1">Start Date</label>
+                <input
+                  type="date"
+                  value={dateRange.startDate}
+                  onChange={(e) => setDateRange(prev => ({ ...prev, startDate: e.target.value }))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                />
+              </div>
+              <div>
+                <label className="block text-xs text-gray-600 mb-1">End Date</label>
+                <input
+                  type="date"
+                  value={dateRange.endDate}
+                  onChange={(e) => setDateRange(prev => ({ ...prev, endDate: e.target.value }))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                />
+              </div>
+            </div>
+          </div>
+        </div>
+        
+        <div className="mt-4 p-3 bg-purple-50 border border-purple-200 rounded-lg">
+          <div className="flex items-center space-x-2 text-purple-800">
+            <Info className="h-4 w-4" />
+            <span className="text-sm">
+              Selected range: <strong>{dateRange.startDate}</strong> to <strong>{dateRange.endDate}</strong>
+              {(() => {
+                const start = new Date(dateRange.startDate);
+                const end = new Date(dateRange.endDate);
+                const diffTime = Math.abs(end.getTime() - start.getTime());
+                const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+                const diffMonths = Math.round(diffDays / 30);
+                return ` (${diffMonths} month${diffMonths !== 1 ? 's' : ''}, ${diffDays} days)`;
+              })()}
+            </span>
+          </div>
+        </div>
+      </div>
+
       {/* Analysis Controls */}
       <div className="bg-white rounded-lg shadow-md p-6">
         <div className="flex items-center justify-between mb-4">
@@ -575,6 +727,9 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
             <div className="flex-1">
               <div className="text-sm font-medium text-blue-900">
                 Processing customer {progress.current} of {progress.total}
+              </div>
+              <div className="text-xs text-blue-700">
+                Date range: {dateRange.startDate} to {dateRange.endDate}
               </div>
               <div className="text-xs text-blue-700">{progress.item}</div>
               <div className="w-full bg-blue-200 rounded-full h-2 mt-2">
@@ -648,18 +803,23 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
               </button>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-6 gap-4">
               <div className="bg-blue-50 rounded-lg p-4">
+                <div className="text-2xl font-bold text-blue-600">{overallStats.totalShipments.toLocaleString()}</div>
+                <div className="text-sm text-blue-700">Shipments</div>
+                <div className="text-xs text-blue-600">{overallStats.dateRange}</div>
+              </div>
+              <div className="bg-green-50 rounded-lg p-4">
                 <div className="text-2xl font-bold text-blue-600">{overallStats.totalCustomers}</div>
                 <div className="text-sm text-blue-700">Customers</div>
                 <div className="text-xs text-blue-600">Analyzed</div>
               </div>
-              <div className="bg-green-50 rounded-lg p-4">
+              <div className="bg-purple-50 rounded-lg p-4">
                 <div className="text-2xl font-bold text-green-600">{overallStats.totalCarriers}</div>
                 <div className="text-sm text-green-700">Carriers</div>
                 <div className="text-xs text-green-600">Evaluated</div>
               </div>
-              <div className="bg-purple-50 rounded-lg p-4">
+              <div className="bg-indigo-50 rounded-lg p-4">
                 <div className="text-2xl font-bold text-purple-600">{overallStats.totalCombinations}</div>
                 <div className="text-sm text-purple-700">Combinations</div>
                 <div className="text-xs text-purple-600">Customer-Carrier pairs</div>

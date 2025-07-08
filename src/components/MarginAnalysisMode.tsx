@@ -16,12 +16,15 @@ import {
   Clock,
   Download,
   ArrowRight,
-  Percent
+  Percent,
+  RefreshCw,
+  Zap
 } from 'lucide-react';
 import { Project44APIClient, FreshXAPIClient } from '../utils/apiClient';
 import { formatCurrency } from '../utils/pricingCalculator';
-import { PricingSettings } from '../types';
+import { PricingSettings, RFQRow } from '../types';
 import { supabase } from '../utils/supabase';
+import { RFQProcessor } from '../utils/rfqProcessor';
 
 interface MarginAnalysisModeProps {
   project44Client: Project44APIClient | null;
@@ -44,28 +47,17 @@ interface CustomerMarginAnalysis {
   originalShipments: number;
   originalRevenue: number;
   originalCarrierCost: number;
-  originalMargin: number;
   originalMarginPercent: number;
   newCarrierCost: number;
+  newQuoteCount: number;
   requiredMarginPercent: number;
   marginAdjustment: number;
   revenueImpact: number;
-  status: 'maintains_revenue' | 'requires_increase' | 'allows_decrease';
+  costDifference: number;
+  costDifferencePercent: number;
+  status: 'maintains_revenue' | 'requires_increase' | 'allows_decrease' | 'no_quotes';
+  sampleShipments: any[];
 }
-
-interface NegotiationScenario {
-  scenarioName: string;
-  carrierRateChange: number; // percentage change
-  description: string;
-}
-
-const NEGOTIATION_SCENARIOS: NegotiationScenario[] = [
-  { scenarioName: 'Minor Increase', carrierRateChange: 5, description: '5% carrier rate increase' },
-  { scenarioName: 'Moderate Increase', carrierRateChange: 10, description: '10% carrier rate increase' },
-  { scenarioName: 'Significant Increase', carrierRateChange: 15, description: '15% carrier rate increase' },
-  { scenarioName: 'Major Increase', carrierRateChange: 20, description: '20% carrier rate increase' },
-  { scenarioName: 'Custom', carrierRateChange: 0, description: 'Custom rate change' }
-];
 
 export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
   project44Client,
@@ -76,8 +68,6 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
 }) => {
   const [carriers, setCarriers] = useState<CarrierOption[]>([]);
   const [selectedCarrier, setSelectedCarrier] = useState<string>('');
-  const [selectedScenario, setSelectedScenario] = useState<NegotiationScenario>(NEGOTIATION_SCENARIOS[0]);
-  const [customRateChange, setCustomRateChange] = useState<number>(0);
   const [marginAnalyses, setMarginAnalyses] = useState<CustomerMarginAnalysis[]>([]);
   const [loading, setLoading] = useState(false);
   const [loadingCarriers, setLoadingCarriers] = useState(false);
@@ -104,9 +94,9 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
       while (hasMore) {
         console.log(`📋 Loading shipments batch: records ${from}-${from + batchSize - 1}`);
         
-        const { data, error, count } = await supabase
+        const { data, error } = await supabase
           .from('Shipments')
-          .select('Customer, "Booked Carrier", "Quoted Carrier", Revenue, "Carrier Expense", SCAC', { count: 'exact' })
+          .select('Customer, "Booked Carrier", "Quoted Carrier", Revenue, "Carrier Expense", SCAC')
           .not('Customer', 'is', null)
           .not('Booked Carrier', 'is', null)
           .gt('Revenue', 0)
@@ -185,9 +175,65 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
     }
   };
 
+  const convertShipmentToRFQ = (shipment: any): RFQRow | null => {
+    try {
+      // Extract origin and destination zips from shipment data
+      const originZip = (shipment.Zip || '').toString().substring(0, 5);
+      const destinationZip = (shipment.Zip_1 || '').toString().substring(0, 5);
+      
+      if (!originZip || !destinationZip || originZip.length !== 5 || destinationZip.length !== 5) {
+        console.warn('Invalid ZIP codes in shipment:', { originZip, destinationZip });
+        return null;
+      }
+
+      // Extract shipment details
+      const pallets = parseInt(shipment['Tot Packages']) || 1;
+      const grossWeight = parseFloat(shipment['Tot Weight']) || 1000;
+      const freightClass = shipment['Max Freight Class'] ? shipment['Max Freight Class'].toString() : '70';
+      
+      // Determine if it's a reefer shipment (based on commodity or other indicators)
+      const commodity = (shipment.Commodities || '').toLowerCase();
+      const isReefer = commodity.includes('refrigerat') || commodity.includes('frozen') || commodity.includes('chilled');
+      
+      // Create pickup date (use scheduled pickup date or default to today)
+      const pickupDate = shipment['Scheduled Pickup Date'] ? 
+        new Date(shipment['Scheduled Pickup Date']).toISOString().split('T')[0] :
+        new Date().toISOString().split('T')[0];
+
+      const rfq: RFQRow = {
+        fromDate: pickupDate,
+        fromZip: originZip,
+        toZip: destinationZip,
+        pallets,
+        grossWeight,
+        isStackable: true, // Default assumption
+        isReefer,
+        freightClass,
+        accessorial: [], // Could parse from shipment data if available
+        commodityDescription: shipment.Commodities || 'General Freight',
+        packageType: 'PLT',
+        totalPackages: pallets,
+        weightUnit: 'LB',
+        lengthUnit: 'IN',
+        preferredCurrency: 'USD',
+        paymentTerms: 'PREPAID'
+      };
+
+      return rfq;
+    } catch (error) {
+      console.error('❌ Failed to convert shipment to RFQ:', error);
+      return null;
+    }
+  };
+
   const runMarginAnalysis = async () => {
     if (!selectedCarrier) {
       alert('Please select a carrier to analyze');
+      return;
+    }
+
+    if (!project44Client) {
+      alert('Project44 client not available. Please configure your API credentials.');
       return;
     }
 
@@ -196,10 +242,7 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
     setProgress({ current: 0, total: 0, item: 'Loading shipments...' });
 
     try {
-      console.log(`🔍 Running margin analysis for carrier: ${selectedCarrier}`);
-      
-      const rateChangePercent = selectedScenario.scenarioName === 'Custom' ? customRateChange : selectedScenario.carrierRateChange;
-      console.log(`📈 Rate change scenario: ${rateChangePercent}%`);
+      console.log(`🔍 Running real market analysis for carrier: ${selectedCarrier}`);
 
       // Load all shipments for the selected carrier
       let allShipments: any[] = [];
@@ -213,6 +256,8 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
           .select('*')
           .or(`"Booked Carrier".eq.${selectedCarrier},"Quoted Carrier".eq.${selectedCarrier}`)
           .not('Customer', 'is', null)
+          .not('Zip', 'is', null)
+          .not('Zip_1', 'is', null)
           .gt('Revenue', 0)
           .gt('"Carrier Expense"', 0)
           .range(from, from + batchSize - 1);
@@ -250,7 +295,10 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
       });
 
       console.log(`📊 Analyzing ${customerGroups.size} customers`);
-      setProgress({ current: 0, total: customerGroups.size, item: 'Analyzing customers...' });
+      setProgress({ current: 0, total: customerGroups.size, item: 'Converting and processing shipments...' });
+
+      // Create RFQ processor
+      const processor = new RFQProcessor(project44Client, freshxClient);
 
       const analyses: CustomerMarginAnalysis[] = [];
       let processedCount = 0;
@@ -261,7 +309,7 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
         setProgress({ 
           current: processedCount, 
           total: customerGroups.size, 
-          item: `Analyzing ${customerName}...` 
+          item: `Processing ${customerName} (${customerShipments.length} shipments)...` 
         });
 
         // Calculate original totals
@@ -275,50 +323,124 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
 
         if (originalRevenue <= 0 || originalCarrierCost <= 0) continue;
 
-        const originalMargin = originalRevenue - originalCarrierCost;
-        const originalMarginPercent = (originalMargin / originalRevenue) * 100;
+        const originalMarginPercent = ((originalRevenue - originalCarrierCost) / originalRevenue) * 100;
 
-        // Calculate new carrier cost with rate change
-        const newCarrierCost = originalCarrierCost * (1 + rateChangePercent / 100);
-
-        // Calculate required margin to maintain same revenue
-        const requiredMargin = originalRevenue - newCarrierCost;
-        const requiredMarginPercent = (requiredMargin / originalRevenue) * 100;
-
-        // Calculate adjustment needed
-        const marginAdjustment = requiredMarginPercent - originalMarginPercent;
-        const revenueImpact = newCarrierCost - originalCarrierCost;
-
-        // Determine status
-        let status: CustomerMarginAnalysis['status'] = 'maintains_revenue';
-        if (marginAdjustment < -1) status = 'allows_decrease';
-        if (marginAdjustment > 1) status = 'requires_increase';
-
-        analyses.push({
-          customerName,
-          originalShipments: customerShipments.length,
-          originalRevenue,
-          originalCarrierCost,
-          originalMargin,
-          originalMarginPercent,
-          newCarrierCost,
-          requiredMarginPercent,
-          marginAdjustment,
-          revenueImpact,
-          status
-        });
-
-        // Small delay to prevent blocking
-        if (processedCount % 10 === 0) {
-          await new Promise(resolve => setTimeout(resolve, 10));
+        // Convert sample shipments to RFQ format (limit to 5 for performance)
+        const sampleShipments = customerShipments.slice(0, 5);
+        const rfqs: RFQRow[] = [];
+        
+        for (const shipment of sampleShipments) {
+          const rfq = convertShipmentToRFQ(shipment);
+          if (rfq) {
+            rfqs.push(rfq);
+          }
         }
+
+        if (rfqs.length === 0) {
+          console.warn(`No valid RFQs created for ${customerName}`);
+          continue;
+        }
+
+        // Process RFQs through Project44 to get current market rates
+        let totalNewCarrierCost = 0;
+        let totalNewQuotes = 0;
+
+        try {
+          const results = await processor.processMultipleRFQs(rfqs, {
+            selectedCarriers: {}, // Will use account group
+            pricingSettings,
+            selectedCustomer: customerName,
+            batchName: `Margin Analysis - ${customerName}`,
+            createdBy: 'margin-analysis'
+          });
+
+          // Calculate new carrier costs from quotes
+          results.forEach(result => {
+            if (result.status === 'success' && result.quotes.length > 0) {
+              // Find the best quote (lowest carrier cost)
+              const bestQuote = result.quotes.reduce((best, current) => 
+                current.carrierTotalRate < best.carrierTotalRate ? current : best
+              );
+              
+              totalNewCarrierCost += bestQuote.carrierTotalRate;
+              totalNewQuotes++;
+            }
+          });
+
+          // Scale up the costs based on the sample size
+          const scaleFactor = customerShipments.length / sampleShipments.length;
+          const estimatedNewCarrierCost = totalNewCarrierCost * scaleFactor;
+
+          // Calculate required margin to maintain same revenue
+          const requiredMargin = originalRevenue - estimatedNewCarrierCost;
+          const requiredMarginPercent = (requiredMargin / originalRevenue) * 100;
+
+          // Calculate adjustments
+          const marginAdjustment = requiredMarginPercent - originalMarginPercent;
+          const revenueImpact = estimatedNewCarrierCost - originalCarrierCost;
+          const costDifference = estimatedNewCarrierCost - originalCarrierCost;
+          const costDifferencePercent = originalCarrierCost > 0 ? (costDifference / originalCarrierCost) * 100 : 0;
+
+          // Determine status
+          let status: CustomerMarginAnalysis['status'] = 'maintains_revenue';
+          if (totalNewQuotes === 0) {
+            status = 'no_quotes';
+          } else if (marginAdjustment > 2) {
+            status = 'requires_increase';
+          } else if (marginAdjustment < -2) {
+            status = 'allows_decrease';
+          }
+
+          analyses.push({
+            customerName,
+            originalShipments: customerShipments.length,
+            originalRevenue,
+            originalCarrierCost,
+            originalMarginPercent,
+            newCarrierCost: estimatedNewCarrierCost,
+            newQuoteCount: totalNewQuotes,
+            requiredMarginPercent,
+            marginAdjustment,
+            revenueImpact,
+            costDifference,
+            costDifferencePercent,
+            status,
+            sampleShipments: rfqs
+          });
+
+          console.log(`✅ Processed ${customerName}: ${totalNewQuotes} quotes, ${marginAdjustment.toFixed(1)}% margin adjustment`);
+
+        } catch (error) {
+          console.error(`❌ Failed to process ${customerName}:`, error);
+          
+          // Add failed analysis
+          analyses.push({
+            customerName,
+            originalShipments: customerShipments.length,
+            originalRevenue,
+            originalCarrierCost,
+            originalMarginPercent,
+            newCarrierCost: 0,
+            newQuoteCount: 0,
+            requiredMarginPercent: 0,
+            marginAdjustment: 0,
+            revenueImpact: 0,
+            costDifference: 0,
+            costDifferencePercent: 0,
+            status: 'no_quotes',
+            sampleShipments: []
+          });
+        }
+
+        // Small delay between customers
+        await new Promise(resolve => setTimeout(resolve, 100));
       }
 
       // Sort analyses by revenue impact (highest first)
       analyses.sort((a, b) => Math.abs(b.revenueImpact) - Math.abs(a.revenueImpact));
       
       setMarginAnalyses(analyses);
-      console.log(`✅ Completed analysis for ${analyses.length} customers`);
+      console.log(`✅ Completed real market analysis for ${analyses.length} customers`);
 
     } catch (error) {
       console.error('❌ Failed to run margin analysis:', error);
@@ -370,14 +492,17 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
 
     const csvHeaders = [
       'Customer',
-      'Shipments',
+      'Original Shipments',
       'Original Revenue',
       'Original Carrier Cost',
       'Original Margin %',
-      'New Carrier Cost',
+      'New Carrier Cost (Est)',
+      'New Quotes Count',
       'Required Margin %',
       'Margin Adjustment',
       'Revenue Impact',
+      'Cost Difference',
+      'Cost Difference %',
       'Status'
     ];
 
@@ -388,9 +513,12 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
       analysis.originalCarrierCost.toFixed(2),
       analysis.originalMarginPercent.toFixed(2),
       analysis.newCarrierCost.toFixed(2),
+      analysis.newQuoteCount,
       analysis.requiredMarginPercent.toFixed(2),
       analysis.marginAdjustment.toFixed(2),
       analysis.revenueImpact.toFixed(2),
+      analysis.costDifference.toFixed(2),
+      analysis.costDifferencePercent.toFixed(2),
       analysis.status
     ]);
 
@@ -402,7 +530,7 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = `margin-analysis-${selectedCarrier}-${Date.now()}.csv`;
+    link.download = `real-market-analysis-${selectedCarrier}-${Date.now()}.csv`;
     link.click();
     URL.revokeObjectURL(url);
   };
@@ -415,6 +543,8 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
         return <TrendingUp className="h-4 w-4 text-red-500" />;
       case 'allows_decrease':
         return <TrendingDown className="h-4 w-4 text-blue-500" />;
+      case 'no_quotes':
+        return <AlertTriangle className="h-4 w-4 text-gray-500" />;
     }
   };
 
@@ -426,6 +556,8 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
         return 'text-red-600';
       case 'allows_decrease':
         return 'text-blue-600';
+      case 'no_quotes':
+        return 'text-gray-600';
     }
   };
 
@@ -435,18 +567,18 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
       <div className="bg-white rounded-lg shadow-md p-6">
         <div className="flex items-center space-x-3 mb-4">
           <div className="bg-green-600 p-2 rounded-lg">
-            <Calculator className="h-5 w-5 text-white" />
+            <RefreshCw className="h-5 w-5 text-white" />
           </div>
           <div>
-            <h2 className="text-xl font-semibold text-gray-900">Carrier Negotiation Margin Impact</h2>
+            <h2 className="text-xl font-semibold text-gray-900">Real Market Rate Impact Analysis</h2>
             <p className="text-sm text-gray-600">
-              Analyze how carrier rate changes affect customer margins and revenue
+              Reprocess historical shipments through Project44 to get current market rates and determine required margin adjustments
             </p>
           </div>
         </div>
 
         {/* Carrier Selection */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div className="space-y-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
               <Truck className="inline h-4 w-4 mr-1" />
@@ -473,40 +605,21 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
             )}
           </div>
 
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              <Percent className="inline h-4 w-4 mr-1" />
-              Rate Change Scenario
-            </label>
-            <div className="space-y-2">
-              <select
-                value={selectedScenario.scenarioName}
-                onChange={(e) => {
-                  const scenario = NEGOTIATION_SCENARIOS.find(s => s.scenarioName === e.target.value) || NEGOTIATION_SCENARIOS[0];
-                  setSelectedScenario(scenario);
-                }}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
-              >
-                {NEGOTIATION_SCENARIOS.map((scenario) => (
-                  <option key={scenario.scenarioName} value={scenario.scenarioName}>
-                    {scenario.scenarioName}: {scenario.description}
-                  </option>
-                ))}
-              </select>
-              
-              {selectedScenario.scenarioName === 'Custom' && (
-                <div className="flex items-center space-x-2">
-                  <input
-                    type="number"
-                    value={customRateChange}
-                    onChange={(e) => setCustomRateChange(parseFloat(e.target.value) || 0)}
-                    className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                    placeholder="Enter rate change %"
-                    step="0.1"
-                  />
-                  <span className="text-sm text-gray-600">% change</span>
-                </div>
-              )}
+          {/* Analysis Info */}
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+            <div className="flex items-start space-x-3">
+              <Zap className="h-5 w-5 text-blue-600 flex-shrink-0 mt-0.5" />
+              <div className="text-sm text-blue-800">
+                <p className="font-medium mb-2">Real Market Analysis Process:</p>
+                <ul className="list-disc list-inside space-y-1 text-xs">
+                  <li>Loads historical shipments for selected carrier from database</li>
+                  <li>Converts shipments to RFQ format with current routing rules</li>
+                  <li>Processes sample shipments through Project44 API for current market rates</li>
+                  <li>Compares historical costs vs current market costs</li>
+                  <li>Calculates required margin adjustments to maintain revenue</li>
+                  <li>Provides actionable recommendations per customer</li>
+                </ul>
+              </div>
             </div>
           </div>
         </div>
@@ -515,18 +628,18 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
         <div className="mt-6 flex items-center space-x-4">
           <button
             onClick={runMarginAnalysis}
-            disabled={!selectedCarrier || loading}
+            disabled={!selectedCarrier || loading || !project44Client}
             className="flex items-center space-x-2 px-6 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors"
           >
             {loading ? (
               <>
                 <Loader className="h-4 w-4 animate-spin" />
-                <span>Analyzing...</span>
+                <span>Processing...</span>
               </>
             ) : (
               <>
-                <Target className="h-4 w-4" />
-                <span>Run Margin Analysis</span>
+                <RefreshCw className="h-4 w-4" />
+                <span>Run Real Market Analysis</span>
               </>
             )}
           </button>
@@ -567,11 +680,10 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
             <div className="flex items-center justify-between">
               <div>
                 <h3 className="text-lg font-semibold text-gray-900">
-                  Margin Analysis Results: {selectedCarrier}
+                  Real Market Analysis Results: {selectedCarrier}
                 </h3>
                 <p className="text-sm text-gray-600">
-                  Rate change: {selectedScenario.scenarioName === 'Custom' ? customRateChange : selectedScenario.carrierRateChange}% • 
-                  {marginAnalyses.length} customers analyzed
+                  {marginAnalyses.length} customers analyzed using current Project44 rates
                 </p>
               </div>
               
@@ -609,7 +721,7 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
 
           {/* Summary Stats */}
           <div className="px-6 py-4 bg-gray-50 border-b border-gray-200">
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
               <div className="text-center">
                 <div className="text-2xl font-bold text-red-600">
                   {marginAnalyses.filter(a => a.status === 'requires_increase').length}
@@ -629,6 +741,12 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
                 <div className="text-sm text-gray-600">Allow Margin Decrease</div>
               </div>
               <div className="text-center">
+                <div className="text-2xl font-bold text-gray-600">
+                  {marginAnalyses.filter(a => a.status === 'no_quotes').length}
+                </div>
+                <div className="text-sm text-gray-600">No Current Quotes</div>
+              </div>
+              <div className="text-center">
                 <div className="text-2xl font-bold text-orange-600">
                   {formatCurrency(marginAnalyses.reduce((sum, a) => sum + a.revenueImpact, 0))}
                 </div>
@@ -645,10 +763,10 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Customer</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Shipments</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Original Revenue</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Cost Change</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Original Margin</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Required Margin</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Adjustment</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Revenue Impact</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
                 </tr>
               </thead>
@@ -657,12 +775,21 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
                   <tr key={analysis.customerName} className="hover:bg-gray-50">
                     <td className="px-6 py-4 whitespace-nowrap">
                       <div className="font-medium text-gray-900">{analysis.customerName}</div>
+                      <div className="text-xs text-gray-500">{analysis.newQuoteCount} quotes processed</div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
                       {analysis.originalShipments}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                       {formatCurrency(analysis.originalRevenue)}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <div className={`text-sm ${analysis.costDifferencePercent > 0 ? 'text-red-600' : 'text-green-600'}`}>
+                        {analysis.costDifferencePercent > 0 ? '+' : ''}{analysis.costDifferencePercent.toFixed(1)}%
+                      </div>
+                      <div className="text-xs text-gray-500">
+                        {formatCurrency(analysis.costDifference)}
+                      </div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                       {analysis.originalMarginPercent.toFixed(1)}%
@@ -677,9 +804,6 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
                       }`}>
                         {analysis.marginAdjustment > 0 ? '+' : ''}{analysis.marginAdjustment.toFixed(1)}%
                       </div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-red-600">
-                      +{formatCurrency(analysis.revenueImpact)}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <div className={`flex items-center space-x-2 ${getStatusColor(analysis.status)}`}>
@@ -705,7 +829,7 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
           </div>
           <h3 className="text-lg font-medium text-gray-900 mb-2">No Analysis Results</h3>
           <p className="text-gray-600">
-            No shipment data found for {selectedCarrier}. Please select a different carrier or check your data.
+            No processable shipment data found for {selectedCarrier}. Please select a different carrier or check your data.
           </p>
         </div>
       )}

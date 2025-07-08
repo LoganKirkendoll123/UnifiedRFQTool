@@ -20,7 +20,8 @@ import {
   ArrowRight,
   Filter,
   Zap,
-  Award
+  Award,
+  History
 } from 'lucide-react';
 import { Project44APIClient, FreshXAPIClient, BatchData, BatchRequest, BatchResponse } from '../utils/apiClient';
 import { PricingSettings } from '../types';
@@ -37,7 +38,7 @@ interface MarginAnalysisModeProps {
 }
 
 interface AnalysisProgress {
-  phase: 'customers' | 'carriers' | 'shipments' | 'batches' | 'processing' | 'analyzing' | 'complete';
+  phase: 'batches' | 'processing' | 'analyzing' | 'complete';
   current: number;
   total: number;
   item?: string;
@@ -62,47 +63,41 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
   selectedCustomer,
   onMarginRecommendation
 }) => {
-  const [customers, setCustomers] = useState<string[]>([]);
-  const [filteredCustomers, setFilteredCustomers] = useState<string[]>([]);
-  const [selectedAnalysisCustomer, setSelectedAnalysisCustomer] = useState<string>('');
-  const [searchTerm, setSearchTerm] = useState('');
   const [batches, setBatches] = useState<BatchData[]>([]);
+  const [filteredBatches, setFilteredBatches] = useState<BatchData[]>([]);
   const [selectedBatch, setSelectedBatch] = useState<BatchData | null>(null);
+  const [searchTerm, setSearchTerm] = useState('');
   const [loading, setLoading] = useState(false);
   const [progress, setProgress] = useState<AnalysisProgress>({ phase: 'complete', current: 0, total: 0 });
   const [error, setError] = useState<string>('');
   const [analysis, setAnalysis] = useState<CarrierAnalysis[]>([]);
   const [showResults, setShowResults] = useState(false);
+  const [customers, setCustomers] = useState<string[]>([]);
 
-  // Load customers from CustomerCarriers table (same as RFQ tool)
+  // Load customers using same batching approach as RFQ tool (for any customer-related functionality)
   useEffect(() => {
     loadCustomers();
   }, []);
 
-  // Filter customers based on search
+  // Load all batches on component mount
+  useEffect(() => {
+    loadBatches();
+  }, []);
+
+  // Filter batches based on search
   useEffect(() => {
     if (searchTerm) {
-      const filtered = customers.filter(customer =>
-        customer.toLowerCase().includes(searchTerm.toLowerCase())
+      const filtered = batches.filter(batch =>
+        batch.batch_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        batch.customer_name?.toLowerCase().includes(searchTerm.toLowerCase())
       );
-      setFilteredCustomers(filtered);
+      setFilteredBatches(filtered);
     } else {
-      setFilteredCustomers(customers);
+      setFilteredBatches(batches);
     }
-  }, [searchTerm, customers]);
-
-  // Load batches when customer is selected
-  useEffect(() => {
-    if (selectedAnalysisCustomer) {
-      loadBatchesForCustomer(selectedAnalysisCustomer);
-    }
-  }, [selectedAnalysisCustomer]);
+  }, [searchTerm, batches]);
 
   const loadCustomers = async () => {
-    setLoading(true);
-    setError('');
-    setProgress({ phase: 'customers', current: 0, total: 0 });
-    
     try {
       console.log('🔍 Loading all customers from CustomerCarriers...');
       
@@ -113,13 +108,6 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
       let hasMore = true;
       
       while (hasMore) {
-        setProgress({ 
-          phase: 'customers', 
-          current: allCustomers.length, 
-          total: 0,
-          item: `Loading customer batch ${Math.floor(from / batchSize) + 1}...`
-        });
-        
         console.log(`📋 Loading customer batch ${Math.floor(from / batchSize) + 1}: records ${from}-${from + batchSize - 1}`);
         
         const { data, error, count } = await supabase
@@ -134,7 +122,6 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
         
         // Set total count from first batch
         if (from === 0 && count !== null) {
-          setProgress(prev => ({ ...prev, total: count }));
           console.log(`📊 Total customer records available: ${count}`);
         }
         
@@ -142,13 +129,6 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
           allCustomers = [...allCustomers, ...data];
           from += batchSize;
           hasMore = data.length === batchSize; // Continue if we got a full batch
-          
-          setProgress({ 
-            phase: 'customers', 
-            current: allCustomers.length, 
-            total: count || 0,
-            item: `Loaded ${allCustomers.length} customer records...`
-          });
           
           console.log(`📋 Loaded customer batch: ${data.length} records (total loaded: ${allCustomers.length})`);
           
@@ -162,41 +142,14 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
       // Get unique customer names - same as RFQ tool
       const uniqueCustomers = [...new Set(allCustomers?.map(d => d.InternalName).filter(Boolean))].sort();
       setCustomers(uniqueCustomers);
-      setFilteredCustomers(uniqueCustomers);
-      
-      setProgress({ 
-        phase: 'complete', 
-        current: uniqueCustomers.length, 
-        total: uniqueCustomers.length,
-        item: 'Customer loading complete'
-      });
       
       console.log(`✅ Loaded ${uniqueCustomers.length} unique customers from ${allCustomers.length} total records`);
     } catch (err) {
-      let errorMsg = 'Failed to load customers';
-      if (err instanceof Error) {
-        if (err.message.includes('Failed to fetch') || err.message.includes('fetch')) {
-          errorMsg = 'Unable to connect to database. Please check your Supabase configuration.';
-        } else if (err.message.includes('JWT') || err.message.includes('Invalid API key')) {
-          errorMsg = 'Invalid Supabase credentials. Please check your API key.';
-        } else if (err.message.includes('permission') || err.message.includes('policy')) {
-          errorMsg = 'Database access denied. Please check your row-level security policies.';
-        } else {
-          errorMsg = err.message;
-        }
-      }
-      setError(errorMsg);
       console.error('❌ Failed to load customers:', err);
-    } finally {
-      setLoading(false);
-      // Clear progress after a short delay
-      setTimeout(() => {
-        setProgress({ phase: 'complete', current: 0, total: 0 });
-      }, 2000);
     }
   };
 
-  const loadBatchesForCustomer = async (customerName: string) => {
+  const loadBatches = async () => {
     if (!project44Client) return;
 
     setLoading(true);
@@ -204,25 +157,23 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
     setProgress({ phase: 'batches', current: 0, total: 0, item: 'Loading batches...' });
 
     try {
-      console.log(`📋 Loading batches for customer: ${customerName}`);
+      console.log(`📋 Loading all batches for margin analysis...`);
       
-      // Get all batches for this customer
+      // Get all batches
       const allBatches = await project44Client.getAllBatches();
-      const customerBatches = allBatches.filter(batch => 
-        batch.customer_name === customerName && 
-        batch.total_quotes > 0
-      );
+      const batchesWithQuotes = allBatches.filter(batch => batch.total_quotes > 0);
       
-      setBatches(customerBatches);
+      setBatches(batchesWithQuotes);
+      setFilteredBatches(batchesWithQuotes);
       
       setProgress({ 
         phase: 'complete', 
-        current: customerBatches.length, 
-        total: customerBatches.length,
+        current: batchesWithQuotes.length, 
+        total: batchesWithQuotes.length,
         item: 'Batch loading complete'
       });
       
-      console.log(`✅ Found ${customerBatches.length} batches for ${customerName}`);
+      console.log(`✅ Found ${batchesWithQuotes.length} batches with quotes`);
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Failed to load batches';
       setError(errorMessage);
@@ -284,7 +235,7 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
       const newBatchId = await processor.createBatch(newBatchName, {
         selectedCarriers: selectedBatch.selected_carriers || {},
         pricingSettings,
-        selectedCustomer: selectedAnalysisCustomer,
+        selectedCustomer: selectedBatch.customer_name || '',
         createdBy: 'margin-analysis'
       });
 
@@ -292,7 +243,7 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
       await processor.processMultipleRFQs(rfqs, {
         selectedCarriers: selectedBatch.selected_carriers || {},
         pricingSettings,
-        selectedCustomer: selectedAnalysisCustomer,
+        selectedCustomer: selectedBatch.customer_name || '',
         batchName: newBatchName,
         createdBy: 'margin-analysis',
         onProgress: (current, total, item) => {
@@ -324,7 +275,7 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
         item: 'Analyzing carrier margins...'
       });
 
-      const carrierAnalysis = analyzeCarrierMargins(originalResponses, newResponses);
+      const carrierAnalysis = analyzeCarrierMargins(originalResponses, newResponses, selectedBatch.customer_name || '');
       setAnalysis(carrierAnalysis);
       setShowResults(true);
 
@@ -349,7 +300,7 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
     }
   };
 
-  const analyzeCarrierMargins = (originalResponses: BatchResponse[], newResponses: BatchResponse[]): CarrierAnalysis[] => {
+  const analyzeCarrierMargins = (originalResponses: BatchResponse[], newResponses: BatchResponse[], customerName: string): CarrierAnalysis[] => {
     const carrierStats = new Map<string, {
       originalQuotes: BatchResponse[];
       newQuotes: BatchResponse[];
@@ -399,7 +350,7 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
 
       analysis.push({
         carrierName,
-        customerName: selectedAnalysisCustomer,
+        customerName,
         shipmentCount: stats.originalQuotes.length,
         avgRevenue: originalAvgRevenue,
         avgProfit: originalAvgProfit,
@@ -432,7 +383,7 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = `margin-analysis-${selectedAnalysisCustomer}-${new Date().toISOString().split('T')[0]}.csv`;
+    link.download = `margin-analysis-${selectedBatch?.customer_name || 'batch'}-${new Date().toISOString().split('T')[0]}.csv`;
     link.click();
     URL.revokeObjectURL(url);
   };
@@ -443,6 +394,20 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
       case 'MEDIUM': return 'text-yellow-600 bg-yellow-100';
       case 'LOW': return 'text-red-600 bg-red-100';
       default: return 'text-gray-600 bg-gray-100';
+    }
+  };
+
+  const getBatchStatusBadge = (batch: BatchData) => {
+    const successRate = batch.total_rfqs > 0 ? (batch.successful_rfqs / batch.total_rfqs) * 100 : 0;
+    
+    if (successRate >= 90) {
+      return <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">Excellent</span>;
+    } else if (successRate >= 70) {
+      return <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800">Good</span>;
+    } else if (successRate >= 50) {
+      return <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">Fair</span>;
+    } else {
+      return <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-red-100 text-red-800">Poor</span>;
     }
   };
 
@@ -492,16 +457,16 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
         </div>
       )}
 
-      {/* Customer Selection */}
+      {/* Batch Selection */}
       <div className="bg-white rounded-lg shadow-md p-6">
         <div className="flex items-center space-x-3 mb-4">
-          <div className="bg-blue-600 p-2 rounded-lg">
-            <Users className="h-5 w-5 text-white" />
+          <div className="bg-purple-600 p-2 rounded-lg">
+            <History className="h-5 w-5 text-white" />
           </div>
           <div>
-            <h3 className="text-lg font-semibold text-gray-900">Step 1: Select Customer</h3>
+            <h3 className="text-lg font-semibold text-gray-900">Select Historical Batch</h3>
             <p className="text-sm text-gray-600">
-              Choose a customer to analyze carrier-specific margins ({customers.length} customers available)
+              Choose a past batch to analyze carrier margins and determine optimal pricing ({filteredBatches.length} batches available)
             </p>
           </div>
         </div>
@@ -513,56 +478,9 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
               type="text"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              placeholder="Search customers..."
-              className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              placeholder="Search batches by name or customer..."
+              className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
             />
-          </div>
-
-          <div className="max-h-48 overflow-y-auto border border-gray-200 rounded-lg">
-            {loading && progress.phase === 'customers' ? (
-              <div className="p-4 text-center text-gray-500">
-                <Loader className="h-4 w-4 animate-spin mx-auto mb-2" />
-                Loading customers...
-              </div>
-            ) : filteredCustomers.length === 0 ? (
-              <div className="p-4 text-center text-gray-500">
-                {searchTerm ? 'No customers found' : 'No customers available'}
-              </div>
-            ) : (
-              filteredCustomers.map((customer) => (
-                <button
-                  key={customer}
-                  onClick={() => setSelectedAnalysisCustomer(customer)}
-                  className={`w-full px-4 py-2 text-left hover:bg-blue-50 transition-colors ${
-                    selectedAnalysisCustomer === customer ? 'bg-blue-100 text-blue-900' : 'text-gray-900'
-                  }`}
-                >
-                  <div className="flex items-center justify-between">
-                    <span>{customer}</span>
-                    {selectedAnalysisCustomer === customer && (
-                      <CheckCircle className="h-4 w-4 text-blue-600" />
-                    )}
-                  </div>
-                </button>
-              ))
-            )}
-          </div>
-        </div>
-      </div>
-
-      {/* Batch Selection */}
-      {selectedAnalysisCustomer && (
-        <div className="bg-white rounded-lg shadow-md p-6">
-          <div className="flex items-center space-x-3 mb-4">
-            <div className="bg-purple-600 p-2 rounded-lg">
-              <FileText className="h-5 w-5 text-white" />
-            </div>
-            <div>
-              <h3 className="text-lg font-semibold text-gray-900">Step 2: Select Batch</h3>
-              <p className="text-sm text-gray-600">
-                Choose a historical batch to analyze for {selectedAnalysisCustomer} ({batches.length} batches available)
-              </p>
-            </div>
           </div>
 
           {loading && progress.phase === 'batches' ? (
@@ -572,15 +490,17 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
                 <p className="text-gray-600 mt-2">Loading batches...</p>
               </div>
             </div>
-          ) : batches.length === 0 ? (
+          ) : filteredBatches.length === 0 ? (
             <div className="text-center py-8">
               <FileText className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-              <p className="text-gray-600">No batches found for {selectedAnalysisCustomer}</p>
-              <p className="text-gray-500 text-sm">Process some RFQs for this customer first</p>
+              <p className="text-gray-600">
+                {searchTerm ? 'No batches found matching your search' : 'No batches found with quotes'}
+              </p>
+              <p className="text-gray-500 text-sm">Process some RFQs to create batches for analysis</p>
             </div>
           ) : (
-            <div className="space-y-3">
-              {batches.map((batch) => (
+            <div className="space-y-3 max-h-96 overflow-y-auto">
+              {filteredBatches.map((batch) => (
                 <div
                   key={batch.id}
                   onClick={() => setSelectedBatch(batch)}
@@ -594,12 +514,19 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
                     <div className="flex-1">
                       <div className="flex items-center space-x-2 mb-2">
                         <h4 className="font-medium text-gray-900">{batch.batch_name}</h4>
+                        {getBatchStatusBadge(batch)}
                         {selectedBatch?.id === batch.id && (
                           <CheckCircle className="h-4 w-4 text-purple-600" />
                         )}
                       </div>
                       
                       <div className="space-y-1 text-sm text-gray-600">
+                        {batch.customer_name && (
+                          <div className="flex items-center space-x-1">
+                            <Users className="h-3 w-3" />
+                            <span>{batch.customer_name}</span>
+                          </div>
+                        )}
                         <div className="flex items-center space-x-1">
                           <Calendar className="h-3 w-3" />
                           <span>{new Date(batch.created_at).toLocaleDateString()}</span>
@@ -622,7 +549,7 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
             </div>
           )}
         </div>
-      )}
+      </div>
 
       {/* Analysis Controls */}
       {selectedBatch && (
@@ -633,9 +560,12 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
                 <Calculator className="h-5 w-5 text-white" />
               </div>
               <div>
-                <h3 className="text-lg font-semibold text-gray-900">Step 3: Run Analysis</h3>
+                <h3 className="text-lg font-semibold text-gray-900">Run Margin Analysis</h3>
                 <p className="text-sm text-gray-600">
                   Analyze {selectedBatch.batch_name} to determine optimal margins per carrier
+                  {selectedBatch.customer_name && (
+                    <span className="text-purple-600"> for {selectedBatch.customer_name}</span>
+                  )}
                 </p>
               </div>
             </div>
@@ -672,7 +602,10 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
               <div>
                 <h3 className="text-lg font-semibold text-gray-900">Margin Analysis Results</h3>
                 <p className="text-sm text-gray-600">
-                  {analysis.length} carrier recommendations for {selectedAnalysisCustomer}
+                  {analysis.length} carrier recommendations
+                  {selectedBatch?.customer_name && (
+                    <span> for {selectedBatch.customer_name}</span>
+                  )}
                 </p>
               </div>
             </div>

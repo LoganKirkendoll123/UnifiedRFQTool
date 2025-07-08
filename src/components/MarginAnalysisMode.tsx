@@ -78,6 +78,11 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
   const [sortBy, setSortBy] = useState<'customer' | 'revenue' | 'margin' | 'impact'>('revenue');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
   
+  // Saved analyses state
+  const [savedAnalyses, setSavedAnalyses] = useState<any[]>([]);
+  const [loadingSavedAnalyses, setLoadingSavedAnalyses] = useState(false);
+  const [showSavedAnalyses, setShowSavedAnalyses] = useState(false);
+  
   // Date filter state
   const [startDate, setStartDate] = useState(() => {
     const date = new Date();
@@ -531,6 +536,18 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
       setMarginAnalyses(analyses);
       console.log(`✅ Completed comprehensive margin analysis for ${analyses.length} customers using carrier group ${selectedCarrierGroup} (SCAC ${selectedCarrierSCAC})`);
 
+      // Prompt to save analysis
+      if (analyses.length > 0) {
+        const analysisName = prompt(
+          `Analysis complete! Save this analysis?\n\nEnter a name for this analysis:`,
+          `${selectedGroupName} - ${selectedCarrierName} - ${startDate} to ${endDate}`
+        );
+        
+        if (analysisName) {
+          await saveAnalysis(analysisName);
+        }
+      }
+
     } catch (error) {
       console.error('❌ Failed to run margin analysis:', error);
       alert(`Failed to run margin analysis: ${error instanceof Error ? error.message : 'Unknown error'}. Please try again.`);
@@ -674,6 +691,103 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
 
   return (
     <div className="space-y-6">
+      {/* Saved Analyses Section */}
+      <div className="bg-white rounded-lg shadow-md p-6">
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center space-x-3">
+            <div className="bg-purple-600 p-2 rounded-lg">
+              <BarChart3 className="h-5 w-5 text-white" />
+            </div>
+            <div>
+              <h3 className="text-lg font-semibold text-gray-900">Saved Margin Analyses</h3>
+              <p className="text-sm text-gray-600">
+                View and load previously saved margin analysis results
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={() => setShowSavedAnalyses(!showSavedAnalyses)}
+            className="flex items-center space-x-2 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors"
+          >
+            <ChevronDown className={`h-4 w-4 transition-transform ${showSavedAnalyses ? 'rotate-180' : ''}`} />
+            <span>{showSavedAnalyses ? 'Hide' : 'Show'} Saved Analyses</span>
+          </button>
+        </div>
+
+        {showSavedAnalyses && (
+          <div className="space-y-4">
+            {loadingSavedAnalyses ? (
+              <div className="flex items-center space-x-2 p-4">
+                <Loader className="h-4 w-4 animate-spin text-purple-500" />
+                <span className="text-gray-600">Loading saved analyses...</span>
+              </div>
+            ) : savedAnalyses.length === 0 ? (
+              <div className="text-center py-8 text-gray-500">
+                <BarChart3 className="h-12 w-12 mx-auto mb-4 text-gray-300" />
+                <p>No saved analyses found. Run an analysis to save results.</p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {savedAnalyses.map((analysis) => (
+                  <div key={analysis.id} className="bg-purple-50 border border-purple-200 rounded-lg p-4">
+                    <div className="flex items-start justify-between">
+                      <div className="flex-1">
+                        <h4 className="font-medium text-gray-900 mb-2">{analysis.analysis_name}</h4>
+                        <div className="space-y-1 text-sm text-gray-600">
+                          <div>Carrier: {analysis.selected_carrier_name} ({analysis.selected_carrier_scac})</div>
+                          <div>Group: {analysis.carrier_group_name}</div>
+                          <div>Date Range: {analysis.start_date} to {analysis.end_date}</div>
+                          <div>Customers: {analysis.total_customers}</div>
+                          <div>Revenue Impact: {formatCurrency(analysis.total_revenue_impact)}</div>
+                        </div>
+                        <div className="mt-2 text-xs text-gray-500">
+                          Created: {new Date(analysis.created_at).toLocaleDateString()}
+                        </div>
+                      </div>
+                      <div className="flex flex-col space-y-2 ml-4">
+                        <button
+                          onClick={() => loadSavedAnalysis(analysis)}
+                          className="flex items-center space-x-1 px-3 py-1 bg-purple-600 text-white rounded-md hover:bg-purple-700 transition-colors text-sm"
+                        >
+                          <ArrowRight className="h-3 w-3" />
+                          <span>Load</span>
+                        </button>
+                        <button
+                          onClick={() => deleteSavedAnalysis(analysis.id)}
+                          className="flex items-center space-x-1 px-3 py-1 bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors text-sm"
+                        >
+                          <span>Delete</span>
+                        </button>
+                      </div>
+                    </div>
+                    
+                    {/* Summary Stats */}
+                    <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
+                      <div className="bg-white rounded p-2">
+                        <div className="text-red-600 font-medium">{analysis.customers_requiring_increase}</div>
+                        <div className="text-gray-500">Need Increase</div>
+                      </div>
+                      <div className="bg-white rounded p-2">
+                        <div className="text-green-600 font-medium">{analysis.customers_maintaining_margins}</div>
+                        <div className="text-gray-500">Maintain</div>
+                      </div>
+                      <div className="bg-white rounded p-2">
+                        <div className="text-blue-600 font-medium">{analysis.customers_allowing_decrease}</div>
+                        <div className="text-gray-500">Allow Decrease</div>
+                      </div>
+                      <div className="bg-white rounded p-2">
+                        <div className="text-gray-600 font-medium">{analysis.customers_no_quotes}</div>
+                        <div className="text-gray-500">No Quotes</div>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
       {/* Header */}
       <div className="bg-white rounded-lg shadow-md p-6">
         <div className="flex items-center space-x-3 mb-4">
@@ -828,6 +942,24 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
             >
               <Download className="h-4 w-4" />
               <span>Export Results</span>
+            </button>
+          )}
+
+          {marginAnalyses.length > 0 && (
+            <button
+              onClick={() => {
+                const analysisName = prompt(
+                  'Enter a name for this analysis:',
+                  `${selectedGroupName} - ${selectedCarrierName} - ${startDate} to ${endDate}`
+                );
+                if (analysisName) {
+                  saveAnalysis(analysisName);
+                }
+              }}
+              className="flex items-center space-x-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
+            >
+              <Package className="h-4 w-4" />
+              <span>Save Analysis</span>
             </button>
           )}
         </div>

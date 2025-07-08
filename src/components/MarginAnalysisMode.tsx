@@ -116,31 +116,10 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
     endDate: (() => {
       const date = new Date();
       date.setDate(date.getDate() - 1); // Yesterday to avoid today's incomplete data
-      return date.toISOString().split('T')[0];
-    })()
-  });
-
-  useEffect(() => {
-    loadCustomers();
-    loadCarriers();
-  }, []);
-
-  const loadCustomers = async () => {
-    setConnectionError('');
-    try {
-      console.log('🔍 Loading ALL customers from Shipments table in batches...');
-      
-      // Load all customers in batches of 1000
-      let allCustomers: any[] = [];
-      let from = 0;
-      const batchSize = 1000;
-      let hasMore = true;
-      
-      while (hasMore) {
         const { data, error } = await supabase
-          .from('Shipments')
-          .select('Customer')
-          .not('Customer', 'is', null)
+          .from('CustomerCarriers')
+          .select('InternalName')
+          .not('InternalName', 'is', null)
           .range(from, from + batchSize - 1);
         
         if (error) {
@@ -151,7 +130,7 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
         }
         
         if (data && data.length > 0) {
-          allCustomers = [...allCustomers, ...data];
+          console.log(`📋 Loaded batch: ${data.length} customers (total: ${allCustomers.length})`);
           from += batchSize;
           hasMore = data.length === batchSize; // Continue if we got a full batch
           console.log(`📋 Loaded customer batch: ${data.length} customers (total: ${allCustomers.length})`);
@@ -164,11 +143,11 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
         setConnectionError('Shipments table is empty or contains no valid customer records. Please ensure your historical shipment data is loaded into the Shipments table.');
         setCustomers([]);
         return;
-      }
+      const uniqueCustomers = [...new Set(allCustomers?.map(d => d.InternalName).filter(Boolean))].sort();
       
       const uniqueCustomers = [...new Set(allCustomers.map(d => d.Customer).filter(Boolean))].sort();
       setCustomers(uniqueCustomers);
-      
+      console.log(`✅ Loaded ${uniqueCustomers.length} unique customers from ${allCustomers.length} total records`);
       if (uniqueCustomers.length === 0) {
         setConnectionError('Shipments table is empty or contains no valid customer records. Please ensure your historical shipment data is loaded into the Shipments table.');
       }
@@ -177,7 +156,7 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
     } catch (error) {
       console.error('❌ Failed to load customers:', error);
       const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
-      setConnectionError(`Failed to connect to database: ${errorMessage}. Please check your Supabase connection and try again.`);
+      console.error('❌ Failed to load customers from CustomerCarriers:', err);
       setCustomers([]);
     } finally {
       setLoading(false);

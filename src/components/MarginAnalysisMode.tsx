@@ -240,6 +240,51 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
       
       console.log(`✅ Found exact customer match: "${exactCustomerName}" for search term "${customer}"`);
       
+      // First, check total records for this customer without date filtering
+      const { data: totalRecords, error: totalError } = await supabase
+        .from('Shipments')
+        .select('count', { count: 'exact' })
+        .eq('Customer', exactCustomerName)
+        .not('Zip', 'is', null);
+      
+      if (totalError) {
+        console.error(`❌ Error counting total records for ${customer}:`, totalError);
+      } else {
+        console.log(`📊 Total shipments for ${customer} (no date filter): ${totalRecords?.length || 0}`);
+      }
+      
+      // Check sample of pickup dates to understand format
+      const { data: datesSample, error: datesError } = await supabase
+        .from('Shipments')
+        .select('"Scheduled Pickup Date", "Actual Pickup Date"')
+        .eq('Customer', customer)
+        .not('"Scheduled Pickup Date"', 'is', null)
+        .limit(5);
+      
+      if (!datesError && datesSample && datesSample.length > 0) {
+        console.log(`📅 Sample pickup dates for ${customer}:`, datesSample.map(d => ({
+          scheduled: d['Scheduled Pickup Date'],
+          scheduledType: typeof d['Scheduled Pickup Date'],
+          scheduledAsDate: d['Scheduled Pickup Date'] ? new Date(d['Scheduled Pickup Date']).toISOString() : null,
+          actual: d['Actual Pickup Date'],
+          actualType: typeof d['Actual Pickup Date']
+        })));
+      }
+      
+      // Convert date range to timestamps for comparison
+      let startTimestamp: number | null = null;
+      let endTimestamp: number | null = null;
+      
+      if (dateRange.startDate) {
+        startTimestamp = new Date(dateRange.startDate).getTime();
+        console.log(`📅 Start date filter: ${dateRange.startDate} → ${startTimestamp} (${new Date(startTimestamp).toISOString()})`);
+      }
+      
+      if (dateRange.endDate) {
+        endTimestamp = new Date(dateRange.endDate).getTime();
+        console.log(`📅 End date filter: ${dateRange.endDate} → ${endTimestamp} (${new Date(endTimestamp).toISOString()})`);
+      }
+      
       let query = supabase
         .from('Shipments')
         .select(`
@@ -263,20 +308,20 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
           SCAC,
           "Scheduled Pickup Date"
         `)
-        .eq('Customer', exactCustomerName)
+        .eq('Customer', customer)
         .not('Zip', 'is', null)
         .not('Zip_1', 'is', null)
         .not('Tot Packages', 'is', null)
         .not('Tot Weight', 'is', null)
-        .limit(50); // Increased limit for better analysis
+        .limit(50);
       
       // Add date range filtering if we have pickup dates
-      if (dateRange.startDate) {
-        const startTimestamp = new Date(dateRange.startDate).getTime();
+      if (startTimestamp) {
+        console.log(`🔍 Adding start date filter: >= ${startTimestamp}`);
         query = query.gte('"Scheduled Pickup Date"', startTimestamp);
       }
-      if (dateRange.endDate) {
-        const endTimestamp = new Date(dateRange.endDate).getTime();
+      if (endTimestamp) {
+        console.log(`🔍 Adding end date filter: <= ${endTimestamp}`);
         query = query.lte('"Scheduled Pickup Date"', endTimestamp);
       }
       
@@ -284,8 +329,39 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
       
       if (error) throw error;
       
+      console.log(`📋 Query returned ${data?.length || 0} shipments for ${customer} with date filtering`);
+      
+      // If we got no results with date filtering, try without date filtering to see if there are any records
+      if (!data || data.length === 0) {
+        console.log(`⚠️ No shipments found with date filtering, trying without date filter...`);
+        
+        const { data: unfiltered, error: unfilteredError } = await supabase
+          .from('Shipments')
+          .select(`
+            "Invoice #",
+            Customer,
+            "Scheduled Pickup Date"
+          `)
+          .eq('Customer', customer)
+          .not('Zip', 'is', null)
+          .not('Zip_1', 'is', null)
+          .limit(10);
+        
+        if (!unfilteredError && unfiltered && unfiltered.length > 0) {
+          console.log(`📋 Found ${unfiltered.length} shipments WITHOUT date filtering. Sample dates:`, 
+            unfiltered.map(s => ({
+              invoice: s['Invoice #'],
+              pickupDate: s['Scheduled Pickup Date'],
+              pickupDateAsDate: s['Scheduled Pickup Date'] ? new Date(s['Scheduled Pickup Date']).toISOString() : null
+            }))
+          );
+        } else {
+          console.log(`❌ No shipments found even without date filtering for ${customer}`);
+        }
+      }
+      
       // Convert to our format
-      const shipments: ShipmentRecord[] = data.map(d => ({
+      const shipments: ShipmentRecord[] = (data || []).map(d => ({
         invoice_number: d['Invoice #']?.toString() || '',
         customer: exactCustomerName, // Use the exact customer name from database
         origin_city: d['Origin City'] || '',
@@ -308,14 +384,16 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
       }));
       
       // Filter valid shipments
-      return shipments.filter(s => 
+      const validShipments = shipments.filter(s => 
         s.origin_zip.length === 5 && 
         s.destination_zip.length === 5 && 
         s.tot_packages > 0 &&
         parseFloat(s.tot_weight.replace(/[^\d.]/g, '')) > 0
       );
       
-      console.log(`📋 Loaded ${shipments.length} valid shipments for ${customer} in date range`);
+      console.log(`📋 Filtered to ${validShipments.length} valid shipments for ${customer} (from ${shipments.length} total records)`);
+      
+      return validShipments;
     } catch (error) {
       console.error(`❌ Failed to load shipment history for ${customer}:`, error);
       return [];

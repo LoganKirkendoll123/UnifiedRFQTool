@@ -20,9 +20,11 @@ import {
   RefreshCw,
   Zap,
   Calendar,
-  Filter
+  Filter,
+  Building2,
+  ChevronDown
 } from 'lucide-react';
-import { Project44APIClient, FreshXAPIClient } from '../utils/apiClient';
+import { Project44APIClient, FreshXAPIClient, CarrierGroup, Carrier } from '../utils/apiClient';
 import { formatCurrency } from '../utils/pricingCalculator';
 import { PricingSettings, RFQRow } from '../types';
 import { supabase } from '../utils/supabase';
@@ -34,14 +36,6 @@ interface MarginAnalysisModeProps {
   pricingSettings: PricingSettings;
   selectedCustomer: string;
   onMarginRecommendation?: (customer: string, carrier: string, recommendedMargin: number) => void;
-}
-
-interface CarrierOption {
-  name: string;
-  scac?: string;
-  shipmentCount: number;
-  totalRevenue: number;
-  customers: string[];
 }
 
 interface CustomerMarginAnalysis {
@@ -69,11 +63,16 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
   selectedCustomer,
   onMarginRecommendation
 }) => {
-  const [carriers, setCarriers] = useState<CarrierOption[]>([]);
+  // Project44 carrier group and carrier selection
+  const [carrierGroups, setCarrierGroups] = useState<CarrierGroup[]>([]);
+  const [selectedCarrierGroup, setSelectedCarrierGroup] = useState<string>('');
+  const [groupCarriers, setGroupCarriers] = useState<Carrier[]>([]);
   const [selectedCarrier, setSelectedCarrier] = useState<string>('');
+  const [loadingGroups, setLoadingGroups] = useState(false);
+  const [loadingCarriers, setLoadingCarriers] = useState(false);
+  
   const [marginAnalyses, setMarginAnalyses] = useState<CustomerMarginAnalysis[]>([]);
   const [loading, setLoading] = useState(false);
-  const [loadingCarriers, setLoadingCarriers] = useState(false);
   const [progress, setProgress] = useState({ current: 0, total: 0, item: '' });
   const [searchTerm, setSearchTerm] = useState('');
   const [sortBy, setSortBy] = useState<'customer' | 'revenue' | 'margin' | 'impact'>('revenue');
@@ -104,151 +103,64 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
     }
   };
 
+  // Load carrier groups from Project44
   useEffect(() => {
-    loadCarriersFromShipments();
-  }, []);
+    loadCarrierGroups();
+  }, [project44Client]);
 
-  const loadCarriersFromShipments = async () => {
+  // Load carriers when group is selected
+  useEffect(() => {
+    if (selectedCarrierGroup) {
+      loadCarriersFromGroup();
+    } else {
+      setGroupCarriers([]);
+      setSelectedCarrier('');
+    }
+  }, [selectedCarrierGroup, project44Client]);
+
+  const loadCarrierGroups = async () => {
+    if (!project44Client) return;
+
+    setLoadingGroups(true);
+    try {
+      console.log('🏢 Loading carrier groups from Project44...');
+      const groups = await project44Client.getAvailableCarriersByGroup(false, false);
+      setCarrierGroups(groups);
+      console.log(`✅ Loaded ${groups.length} carrier groups`);
+    } catch (error) {
+      console.error('❌ Failed to load carrier groups:', error);
+    } finally {
+      setLoadingGroups(false);
+    }
+  };
+
+  const loadCarriersFromGroup = async () => {
+    if (!project44Client || !selectedCarrierGroup) return;
+
     setLoadingCarriers(true);
     try {
-      console.log('📊 Loading carriers from Shipments table...');
+      console.log(`🚛 Loading carriers from group: ${selectedCarrierGroup}`);
       
-      // Step 1: Get unique booked carriers efficiently
-      console.log('🔍 Getting unique booked carriers...');
-      const { data: bookedCarriers, error: bookedError } = await retryWithBackoff(async () => {
-        return await supabase
-          .from('Shipments')
-          .select('"Booked Carrier"')
-          .not('"Booked Carrier"', 'is', null)
-          .gt('Revenue', 0)
-          .limit(5000); // Reasonable limit for distinct operation
-      });
-
-      if (bookedError) {
-        console.error('❌ Failed to load booked carriers:', bookedError);
-        throw bookedError;
+      // Find the selected group
+      const selectedGroup = carrierGroups.find(g => g.groupCode === selectedCarrierGroup);
+      if (!selectedGroup) {
+        console.error('❌ Selected carrier group not found');
+        return;
       }
 
-      // Step 2: Get unique quoted carriers efficiently
-      console.log('🔍 Getting unique quoted carriers...');
-      const { data: quotedCarriers, error: quotedError } = await retryWithBackoff(async () => {
-        return await supabase
-          .from('Shipments')
-          .select('"Quoted Carrier"')
-          .not('"Quoted Carrier"', 'is', null)
-          .gt('Revenue', 0)
-          .limit(5000); // Reasonable limit for distinct operation
-      });
-
-      if (quotedError) {
-        console.error('❌ Failed to load quoted carriers:', quotedError);
-        throw quotedError;
-      }
-
-      // Step 3: Combine and deduplicate carrier names
-      const allCarrierNames = new Set<string>();
-      
-      bookedCarriers?.forEach(record => {
-        const carrierName = record['Booked Carrier'];
-        if (carrierName) {
-          allCarrierNames.add(carrierName);
+      // Get unique carriers from the group
+      const uniqueCarriers = new Map<string, Carrier>();
+      selectedGroup.carriers.forEach(carrier => {
+        if (!uniqueCarriers.has(carrier.id)) {
+          uniqueCarriers.set(carrier.id, carrier);
         }
       });
 
-      quotedCarriers?.forEach(record => {
-        const carrierName = record['Quoted Carrier'];
-        if (carrierName) {
-          allCarrierNames.add(carrierName);
-        }
-      });
-
-      console.log(`✅ Found ${allCarrierNames.size} unique carriers`);
-
-      // Step 4: For each carrier, get aggregated statistics efficiently
-      const carrierPromises = Array.from(allCarrierNames).map(async (carrierName) => {
-        try {
-          // Get stats for this carrier (booked + quoted)
-          const { data: stats, error: statsError } = await retryWithBackoff(async () => {
-            return await supabase
-              .from('Shipments')
-              .select('Customer, Revenue, "Carrier Expense", SCAC')
-              .or(`"Booked Carrier".eq.${carrierName},"Quoted Carrier".eq.${carrierName}`)
-              .not('Customer', 'is', null)
-              .gt('Revenue', 0)
-              .limit(1000); // Limit per carrier to avoid huge queries
-          });
-
-          if (statsError) {
-            console.error(`❌ Failed to load stats for ${carrierName}:`, statsError);
-            return null;
-          }
-
-          if (!stats || stats.length === 0) {
-            return null;
-          }
-
-          // Calculate aggregated stats
-          const customers = new Set<string>();
-          let totalRevenue = 0;
-          let scac: string | undefined;
-
-          stats.forEach(record => {
-            const customer = record.Customer;
-            const revenue = parseFloat(record.Revenue) || 0;
-            
-            if (customer) {
-              customers.add(customer);
-            }
-            totalRevenue += revenue;
-            
-            if (!scac && record.SCAC) {
-              scac = record.SCAC;
-            }
-          });
-
-          return {
-            name: carrierName,
-            scac,
-            shipmentCount: stats.length,
-            totalRevenue,
-            customers: Array.from(customers)
-          };
-        } catch (error) {
-          console.error(`❌ Failed to process carrier ${carrierName}:`, error);
-          return null;
-        }
-      });
-
-      // Step 5: Execute all carrier queries with rate limiting
-      const carrierOptions: CarrierOption[] = [];
-      const batchSize = 5; // Process 5 carriers at a time to avoid overwhelming the database
-      
-      for (let i = 0; i < carrierPromises.length; i += batchSize) {
-        const batch = carrierPromises.slice(i, i + batchSize);
-        console.log(`📊 Processing carriers batch ${Math.floor(i / batchSize) + 1}/${Math.ceil(carrierPromises.length / batchSize)}...`);
-        
-        const batchResults = await Promise.all(batch);
-        
-        batchResults.forEach(result => {
-          if (result) {
-            carrierOptions.push(result);
-          }
-        });
-        
-        // Delay between batches
-        if (i + batchSize < carrierPromises.length) {
-          await new Promise(resolve => setTimeout(resolve, 1000));
-        }
-      }
-
-      // Sort by total revenue (highest first)
-      carrierOptions.sort((a, b) => b.totalRevenue - a.totalRevenue);
-
-      setCarriers(carrierOptions);
-      console.log(`✅ Processed ${carrierOptions.length} carriers with statistics`);
-      
+      const carriers = Array.from(uniqueCarriers.values());
+      setGroupCarriers(carriers);
+      console.log(`✅ Loaded ${carriers.length} carriers from group ${selectedGroup.groupName}`);
     } catch (error) {
-      console.error('❌ Failed to load carriers:', error);
+      console.error('❌ Failed to load carriers from group:', error);
     } finally {
       setLoadingCarriers(false);
     }
@@ -306,8 +218,8 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
   };
 
   const runMarginAnalysis = async () => {
-    if (!selectedCarrier) {
-      alert('Please select a carrier to analyze');
+    if (!selectedCarrierGroup || !selectedCarrier) {
+      alert('Please select both a carrier group and a specific carrier');
       return;
     }
 
@@ -327,6 +239,7 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
 
     try {
       console.log(`🔍 Running comprehensive margin analysis for all customers (${startDate} to ${endDate})`);
+      console.log(`📊 Using carrier group: ${selectedCarrierGroup}, carrier: ${selectedCarrier}`);
 
       // Convert dates to BigInt format used in Shipments table
       const startDateTimestamp = Math.floor(new Date(startDate).getTime() / 1000);
@@ -475,13 +388,15 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
           continue;
         }
 
-        // Process RFQs through Project44 to get current market rates
+        // Process RFQs through Project44 using the selected carrier group
         let totalNewCarrierCost = 0;
         let totalNewQuotes = 0;
 
         try {
-          const results = await processor.processMultipleRFQs(rfqs, {
-            selectedCarriers: {}, // Will use account group
+          console.log(`🚛 Processing ${rfqs.length} RFQs for ${customerName} using carrier group ${selectedCarrierGroup}`);
+          
+          // Use the selected carrier group for processing
+          const results = await processor.processRFQsForAccountGroup(rfqs, selectedCarrierGroup, {
             pricingSettings,
             selectedCustomer: customerName,
             batchName: `Margin Analysis - ${customerName}`,
@@ -576,7 +491,7 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
       analyses.sort((a, b) => Math.abs(b.revenueImpact) - Math.abs(a.revenueImpact));
       
       setMarginAnalyses(analyses);
-      console.log(`✅ Completed comprehensive margin analysis for ${analyses.length} customers`);
+      console.log(`✅ Completed comprehensive margin analysis for ${analyses.length} customers using carrier group ${selectedCarrierGroup}`);
 
     } catch (error) {
       console.error('❌ Failed to run margin analysis:', error);
@@ -626,6 +541,9 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
   const exportResults = () => {
     if (marginAnalyses.length === 0) return;
 
+    const selectedGroupName = carrierGroups.find(g => g.groupCode === selectedCarrierGroup)?.groupName || selectedCarrierGroup;
+    const selectedCarrierName = groupCarriers.find(c => c.id === selectedCarrier)?.name || selectedCarrier;
+
     const csvHeaders = [
       'Customer',
       'Original Shipments',
@@ -641,7 +559,9 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
       'Cost Difference %',
       'Status',
       'Top Carrier Used',
-      'Date Range'
+      'Date Range',
+      'Carrier Group Used',
+      'Reference Carrier'
     ];
 
     const csvData = marginAnalyses.map(analysis => {
@@ -663,7 +583,9 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
         analysis.costDifferencePercent.toFixed(2),
         analysis.status,
         topCarrier,
-        `${startDate} to ${endDate}`
+        `${startDate} to ${endDate}`,
+        selectedGroupName,
+        selectedCarrierName
       ];
     });
 
@@ -675,7 +597,7 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = `comprehensive-margin-analysis-${startDate}-to-${endDate}-${Date.now()}.csv`;
+    link.download = `margin-analysis-${selectedGroupName}-${startDate}-to-${endDate}-${Date.now()}.csv`;
     link.click();
     URL.revokeObjectURL(url);
   };
@@ -706,6 +628,9 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
     }
   };
 
+  const selectedGroupName = carrierGroups.find(g => g.groupCode === selectedCarrierGroup)?.groupName;
+  const selectedCarrierName = groupCarriers.find(c => c.id === selectedCarrier)?.name;
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -717,7 +642,7 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
           <div>
             <h2 className="text-xl font-semibold text-gray-900">Comprehensive Customer Margin Analysis</h2>
             <p className="text-sm text-gray-600">
-              Analyze ALL customers with date filtering - reprocess historical shipments through Project44 to determine required margin adjustments
+              Analyze ALL customers with date filtering - reprocess historical shipments through Project44 carrier groups to determine required margin adjustments
             </p>
           </div>
         </div>
@@ -753,33 +678,66 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
           </div>
         </div>
 
-        {/* Carrier Selection */}
+        {/* Project44 Carrier Group and Carrier Selection */}
         <div className="space-y-4">
+          {/* Carrier Group Selection */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
-              <Truck className="inline h-4 w-4 mr-1" />
-              Reference Carrier (for context)
+              <Building2 className="inline h-4 w-4 mr-1" />
+              Project44 Carrier Group
             </label>
-            {loadingCarriers ? (
+            {loadingGroups ? (
               <div className="flex items-center space-x-2 p-3 border rounded-lg">
                 <Loader className="h-4 w-4 animate-spin text-blue-500" />
-                <span className="text-sm text-gray-600">Loading carriers from shipments...</span>
+                <span className="text-sm text-gray-600">Loading carrier groups from Project44...</span>
               </div>
             ) : (
               <select
-                value={selectedCarrier}
-                onChange={(e) => setSelectedCarrier(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                value={selectedCarrierGroup}
+                onChange={(e) => {
+                  setSelectedCarrierGroup(e.target.value);
+                  setSelectedCarrier(''); // Reset carrier selection
+                }}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               >
-                <option value="">Choose a carrier for reference...</option>
-                {carriers.map((carrier) => (
-                  <option key={carrier.name} value={carrier.name}>
-                    {carrier.name} ({carrier.shipmentCount} shipments, {formatCurrency(carrier.totalRevenue)} revenue)
+                <option value="">Select a carrier group...</option>
+                {carrierGroups.map((group) => (
+                  <option key={group.groupCode} value={group.groupCode}>
+                    {group.groupName} ({group.carriers.length} carriers)
                   </option>
                 ))}
               </select>
             )}
           </div>
+
+          {/* Carrier Selection */}
+          {selectedCarrierGroup && (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                <Truck className="inline h-4 w-4 mr-1" />
+                Carrier from {selectedGroupName}
+              </label>
+              {loadingCarriers ? (
+                <div className="flex items-center space-x-2 p-3 border rounded-lg">
+                  <Loader className="h-4 w-4 animate-spin text-blue-500" />
+                  <span className="text-sm text-gray-600">Loading carriers from group...</span>
+                </div>
+              ) : (
+                <select
+                  value={selectedCarrier}
+                  onChange={(e) => setSelectedCarrier(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                >
+                  <option value="">Select a carrier...</option>
+                  {groupCarriers.map((carrier) => (
+                    <option key={carrier.id} value={carrier.id}>
+                      {carrier.name} {carrier.scac && `(${carrier.scac})`}
+                    </option>
+                  ))}
+                </select>
+              )}
+            </div>
+          )}
 
           {/* Analysis Info */}
           <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
@@ -788,10 +746,10 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
               <div className="text-sm text-yellow-800">
                 <p className="font-medium mb-2">Comprehensive Analysis Process:</p>
                 <ul className="list-disc list-inside space-y-1 text-xs">
-                  <li>Analyzes ALL customers in the selected date range (not just those using the reference carrier)</li>
+                  <li>Analyzes ALL customers in the selected date range</li>
                   <li>Loads ALL shipments for each customer within the date range</li>
                   <li>Converts sample shipments to RFQ format with current routing rules</li>
-                  <li>Processes through Project44 API to get current market rates</li>
+                  <li>Processes through Project44 API using the selected carrier group</li>
                   <li>Compares historical costs vs current market costs for each customer</li>
                   <li>Calculates required margin adjustments to maintain revenue levels</li>
                   <li>Provides customer-specific recommendations based on their usage patterns</li>
@@ -805,7 +763,7 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
         <div className="mt-6 flex items-center space-x-4">
           <button
             onClick={runMarginAnalysis}
-            disabled={!selectedCarrier || loading || !project44Client || !startDate || !endDate}
+            disabled={!selectedCarrierGroup || !selectedCarrier || loading || !project44Client || !startDate || !endDate}
             className="flex items-center space-x-2 px-6 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors"
           >
             {loading ? (
@@ -831,6 +789,18 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
             </button>
           )}
         </div>
+
+        {/* Selected Configuration Display */}
+        {selectedCarrierGroup && selectedCarrier && (
+          <div className="mt-4 p-3 bg-green-50 border border-green-200 rounded-lg">
+            <div className="flex items-center space-x-2 text-green-800 text-sm">
+              <CheckCircle className="h-4 w-4" />
+              <span>
+                Ready to analyze with carrier group: <strong>{selectedGroupName}</strong> using carrier: <strong>{selectedCarrierName}</strong>
+              </span>
+            </div>
+          </div>
+        )}
 
         {/* Progress Bar */}
         {loading && progress.total > 0 && (
@@ -860,7 +830,7 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
                   Comprehensive Margin Analysis Results
                 </h3>
                 <p className="text-sm text-gray-600">
-                  {marginAnalyses.length} customers analyzed using current Project44 rates ({startDate} to {endDate})
+                  {marginAnalyses.length} customers analyzed using {selectedGroupName} carrier group ({startDate} to {endDate})
                 </p>
               </div>
               
@@ -999,15 +969,15 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
       )}
 
       {/* No Results State */}
-      {!loading && marginAnalyses.length === 0 && selectedCarrier && (
+      {!loading && marginAnalyses.length === 0 && selectedCarrierGroup && selectedCarrier && (
         <div className="bg-white rounded-lg shadow-md p-8 text-center">
           <div className="flex items-center justify-center mb-4">
             <AlertTriangle className="h-12 w-12 text-gray-400" />
           </div>
           <h3 className="text-lg font-medium text-gray-900 mb-2">No Analysis Results</h3>
           <p className="text-gray-600">
-            No customers found with shipments in the selected date range ({startDate} to {endDate}).
-            Try adjusting your date range or check your data.
+            No customers found with shipments in the selected date range ({startDate} to {endDate}) using carrier group {selectedGroupName}.
+            Try adjusting your date range or selecting a different carrier group.
           </p>
         </div>
       )}

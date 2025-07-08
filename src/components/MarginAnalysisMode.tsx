@@ -452,7 +452,15 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
               const rfq = convertShipmentToRFQ(shipment);
               console.log(`🔄 Converted shipment to RFQ: ${rfq.fromZip} → ${rfq.toZip}, ${rfq.pallets} pallets, ${rfq.grossWeight} lbs`);
               
+              // Validate the RFQ before processing
+              const validationErrors = processor.validateRFQ ? processor.validateRFQ(rfq) : [];
+              if (validationErrors.length > 0) {
+                console.warn(`⚠️ RFQ validation errors for shipment ${shipmentIdx + 1}:`, validationErrors);
+                continue; // Skip invalid RFQs
+              }
+              
               // Get current market rates for selected carriers only
+              console.log(`📞 Making RFQ API call for shipment ${shipmentIdx + 1}...`);
               const rfqResult = await processor.processSingleRFQ(rfq, {
                 selectedCarriers,
                 pricingSettings,
@@ -461,18 +469,34 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
               
               console.log(`📊 RFQ API call completed for shipment ${shipmentIdx + 1}: ${rfqResult.quotes.length} quotes received, status: ${rfqResult.status}`);
               
+              // Log detailed RFQ result
+              if (rfqResult.error) {
+                console.error(`❌ RFQ processing error for shipment ${shipmentIdx + 1}:`, rfqResult.error);
+                continue;
+              }
+              
+              if (rfqResult.quotes.length === 0) {
+                console.log(`⚠️ No quotes received for shipment ${shipmentIdx + 1} (${rfq.fromZip} → ${rfq.toZip})`);
+                continue;
+              }
+              
               const historicalRate = parseFloat(shipment.carrier_quote.replace(/[^\d.]/g, '')) || 0;
               const historicalRevenue = parseFloat(shipment.revenue.replace(/[^\d.]/g, '')) || 0;
               const historicalProfit = parseFloat(shipment.profit.replace(/[^\d.]/g, '')) || 0;
               const historicalMargin = historicalRevenue > 0 ? (historicalProfit / historicalRevenue) * 100 : 0;
               
+              console.log(`💰 Historical data for shipment ${shipmentIdx + 1}: Rate=${formatCurrency(historicalRate)}, Revenue=${formatCurrency(historicalRevenue)}, Profit=${formatCurrency(historicalProfit)}, Margin=${historicalMargin.toFixed(1)}%`);
+              
               if (historicalRate > 0 && rfqResult.quotes.length > 0) {
                 // SCAC Matching: Only compare quotes from the same carrier as the historical shipment
                 const historicalSCAC = shipment.scac?.trim().toUpperCase();
+                console.log(`🔍 Looking for SCAC matches for: ${historicalSCAC}`);
+                
                 if (historicalSCAC) {
                   // Find current quotes that match the historical carrier's SCAC
                   const matchingQuotes = rfqResult.quotes.filter(quote => {
                     const currentSCAC = (quote.carrier.scac || quote.carrierCode)?.trim().toUpperCase();
+                    console.log(`   Comparing: Historical=${historicalSCAC} vs Current=${currentSCAC} (${quote.carrier.name})`);
                     return currentSCAC === historicalSCAC;
                   });
                   
@@ -515,7 +539,13 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
               await new Promise(resolve => setTimeout(resolve, 150));
               
             } catch (error) {
-              console.warn(`⚠️ Failed to analyze shipment ${shipmentIdx + 1} for ${customer}:`, error);
+              console.error(`❌ Failed to analyze shipment ${shipmentIdx + 1} for ${customer}:`, error);
+              console.error(`   Shipment details:`, {
+                invoice: shipment.invoice_number,
+                route: `${shipment.origin_zip} → ${shipment.destination_zip}`,
+                weight: shipment.tot_weight,
+                packages: shipment.tot_packages
+              });
             }
           }
           

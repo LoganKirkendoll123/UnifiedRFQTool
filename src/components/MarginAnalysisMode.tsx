@@ -89,6 +89,21 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
     return new Date().toISOString().split('T')[0];
   });
 
+  // Add retry logic for database operations
+  const retryWithBackoff = async (fn: () => Promise<any>, maxRetries = 3, baseDelay = 1000) => {
+    for (let i = 0; i < maxRetries; i++) {
+      try {
+        return await fn();
+      } catch (error) {
+        if (i === maxRetries - 1) throw error;
+        
+        const delay = baseDelay * Math.pow(2, i) + Math.random() * 1000;
+        console.log(`⏳ Retry ${i + 1}/${maxRetries} after ${delay.toFixed(0)}ms...`);
+        await new Promise(resolve => setTimeout(resolve, delay));
+      }
+    }
+  };
+
   useEffect(() => {
     loadCarriersFromShipments();
   }, []);
@@ -101,21 +116,24 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
       // Load all shipments in batches to get carrier data
       let allShipments: any[] = [];
       let from = 0;
-      const batchSize = 1000;
+      const batchSize = 500; // Reduced batch size to avoid limits
       let hasMore = true;
       
       while (hasMore) {
         console.log(`📋 Loading shipments batch: records ${from}-${from + batchSize - 1}`);
         
-        const { data, error } = await supabase
-          .from('Shipments')
-          .select('Customer, "Booked Carrier", "Quoted Carrier", Revenue, "Carrier Expense", SCAC')
-          .not('Customer', 'is', null)
-          .not('Booked Carrier', 'is', null)
-          .gt('Revenue', 0)
-          .range(from, from + batchSize - 1);
+        const { data, error } = await retryWithBackoff(async () => {
+          return await supabase
+            .from('Shipments')
+            .select('Customer, "Booked Carrier", "Quoted Carrier", Revenue, "Carrier Expense", SCAC')
+            .not('Customer', 'is', null)
+            .not('Booked Carrier', 'is', null)
+            .gt('Revenue', 0)
+            .range(from, from + batchSize - 1);
+        });
         
         if (error) {
+          console.error(`❌ Failed to load shipments batch ${from}-${from + batchSize - 1}:`, error);
           throw error;
         }
         
@@ -128,8 +146,8 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
           hasMore = false;
         }
         
-        // Small delay between batches
-        await new Promise(resolve => setTimeout(resolve, 100));
+        // Longer delay between batches to respect rate limits
+        await new Promise(resolve => setTimeout(resolve, 500));
       }
 
       console.log(`✅ Loaded ${allShipments.length} shipments total`);
@@ -269,21 +287,24 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
       // First, get all unique customers
       let allCustomers: string[] = [];
       let from = 0;
-      const batchSize = 1000;
+      const batchSize = 500; // Reduced batch size
       let hasMore = true;
       
       while (hasMore) {
         console.log(`👥 Loading customers batch: records ${from}-${from + batchSize - 1}`);
         
-        const { data, error } = await supabase
-          .from('Shipments')
-          .select('Customer')
-          .not('Customer', 'is', null)
-          .gte('"Scheduled Pickup Date"', startDateTimestamp)
-          .lte('"Scheduled Pickup Date"', endDateTimestamp)
-          .range(from, from + batchSize - 1);
+        const { data, error } = await retryWithBackoff(async () => {
+          return await supabase
+            .from('Shipments')
+            .select('Customer')
+            .not('Customer', 'is', null)
+            .gte('"Scheduled Pickup Date"', startDateTimestamp)
+            .lte('"Scheduled Pickup Date"', endDateTimestamp)
+            .range(from, from + batchSize - 1);
+        });
         
         if (error) {
+          console.error(`❌ Failed to load customers batch ${from}-${from + batchSize - 1}:`, error);
           throw error;
         }
         
@@ -297,7 +318,8 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
           hasMore = false;
         }
         
-        await new Promise(resolve => setTimeout(resolve, 50));
+        // Longer delay between customer batches
+        await new Promise(resolve => setTimeout(resolve, 300));
       }
 
       // Get unique customers
@@ -324,20 +346,23 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
         // Load all shipments for this customer in the date range
         let customerShipments: any[] = [];
         let customerFrom = 0;
+        const customerBatchSize = 200; // Smaller batch size for individual customers
         let customerHasMore = true;
         
         while (customerHasMore) {
-          const { data, error } = await supabase
-            .from('Shipments')
-            .select('*')
-            .eq('Customer', customerName)
-            .gte('"Scheduled Pickup Date"', startDateTimestamp)
-            .lte('"Scheduled Pickup Date"', endDateTimestamp)
-            .not('Zip', 'is', null)
-            .not('Zip_1', 'is', null)
-            .gt('Revenue', 0)
-            .gt('"Carrier Expense"', 0)
-            .range(customerFrom, customerFrom + batchSize - 1);
+          const { data, error } = await retryWithBackoff(async () => {
+            return await supabase
+              .from('Shipments')
+              .select('*')
+              .eq('Customer', customerName)
+              .gte('"Scheduled Pickup Date"', startDateTimestamp)
+              .lte('"Scheduled Pickup Date"', endDateTimestamp)
+              .not('Zip', 'is', null)
+              .not('Zip_1', 'is', null)
+              .gt('Revenue', 0)
+              .gt('"Carrier Expense"', 0)
+              .range(customerFrom, customerFrom + customerBatchSize - 1);
+          });
           
           if (error) {
             console.error(`❌ Failed to load shipments for ${customerName}:`, error);
@@ -346,13 +371,14 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
           
           if (data && data.length > 0) {
             customerShipments = [...customerShipments, ...data];
-            customerFrom += batchSize;
-            customerHasMore = data.length === batchSize;
+            customerFrom += customerBatchSize;
+            customerHasMore = data.length === customerBatchSize;
           } else {
             customerHasMore = false;
           }
           
-          await new Promise(resolve => setTimeout(resolve, 25));
+          // Longer delay between customer shipment batches
+          await new Promise(resolve => setTimeout(resolve, 200));
         }
 
         if (customerShipments.length === 0) {
@@ -495,7 +521,7 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
         }
 
         // Small delay between customers
-        await new Promise(resolve => setTimeout(resolve, 100));
+        await new Promise(resolve => setTimeout(resolve, 250));
       }
 
       // Sort analyses by revenue impact (highest first)
@@ -506,7 +532,7 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
 
     } catch (error) {
       console.error('❌ Failed to run margin analysis:', error);
-      alert('Failed to run margin analysis. Please try again.');
+      alert(`Failed to run margin analysis: ${error instanceof Error ? error.message : 'Unknown error'}. Please try again.`);
     } finally {
       setLoading(false);
       setProgress({ current: 0, total: 0, item: '' });

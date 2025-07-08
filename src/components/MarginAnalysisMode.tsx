@@ -216,6 +216,30 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
     try {
       console.log(`📅 Loading shipment history for ${customer} from ${dateRange.startDate} to ${dateRange.endDate}`);
       
+      // First, let's find the exact customer name in the database (case-insensitive)
+      const { data: customerCheck, error: customerError } = await supabase
+        .from('Shipments')
+        .select('Customer')
+        .not('Customer', 'is', null)
+        .limit(1000); // Get a reasonable sample to find matching customers
+      
+      if (customerError) {
+        throw customerError;
+      }
+      
+      // Find the exact database customer name that matches (case-insensitive, trimmed)
+      const exactCustomerName = customerCheck?.find(row => 
+        row.Customer?.trim().toUpperCase() === customer.trim().toUpperCase()
+      )?.Customer;
+      
+      if (!exactCustomerName) {
+        console.log(`❌ No exact customer match found for "${customer}"`);
+        console.log(`Available customers sample:`, customerCheck?.slice(0, 5).map(c => `"${c.Customer}"`));
+        return [];
+      }
+      
+      console.log(`✅ Found exact customer match: "${exactCustomerName}" for search term "${customer}"`);
+      
       let query = supabase
         .from('Shipments')
         .select(`
@@ -239,7 +263,7 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
           SCAC,
           "Scheduled Pickup Date"
         `)
-        .eq('Customer', customer)
+        .eq('Customer', exactCustomerName)
         .not('Zip', 'is', null)
         .not('Zip_1', 'is', null)
         .not('Tot Packages', 'is', null)
@@ -263,7 +287,7 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
       // Convert to our format
       const shipments: ShipmentRecord[] = data.map(d => ({
         invoice_number: d['Invoice #']?.toString() || '',
-        customer: d.Customer || '',
+        customer: exactCustomerName, // Use the exact customer name from database
         origin_city: d['Origin City'] || '',
         origin_state: d.State || '',
         origin_zip: d.Zip?.toString().padStart(5, '0') || '',

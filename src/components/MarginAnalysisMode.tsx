@@ -18,7 +18,9 @@ import {
   ArrowRight,
   Percent,
   RefreshCw,
-  Zap
+  Zap,
+  Calendar,
+  Filter
 } from 'lucide-react';
 import { Project44APIClient, FreshXAPIClient } from '../utils/apiClient';
 import { formatCurrency } from '../utils/pricingCalculator';
@@ -57,6 +59,7 @@ interface CustomerMarginAnalysis {
   costDifferencePercent: number;
   status: 'maintains_revenue' | 'requires_increase' | 'allows_decrease' | 'no_quotes';
   sampleShipments: any[];
+  carrierUsage: { [carrierName: string]: number };
 }
 
 export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
@@ -75,6 +78,16 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
   const [searchTerm, setSearchTerm] = useState('');
   const [sortBy, setSortBy] = useState<'customer' | 'revenue' | 'margin' | 'impact'>('revenue');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
+  
+  // Date filter state
+  const [startDate, setStartDate] = useState(() => {
+    const date = new Date();
+    date.setFullYear(date.getFullYear() - 1); // Default to 1 year ago
+    return date.toISOString().split('T')[0];
+  });
+  const [endDate, setEndDate] = useState(() => {
+    return new Date().toISOString().split('T')[0];
+  });
 
   useEffect(() => {
     loadCarriersFromShipments();
@@ -237,29 +250,37 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
       return;
     }
 
+    if (!startDate || !endDate) {
+      alert('Please select both start and end dates');
+      return;
+    }
+
     setLoading(true);
     setMarginAnalyses([]);
-    setProgress({ current: 0, total: 0, item: 'Loading shipments...' });
+    setProgress({ current: 0, total: 0, item: 'Loading all customers...' });
 
     try {
-      console.log(`🔍 Running real market analysis for carrier: ${selectedCarrier}`);
+      console.log(`🔍 Running comprehensive margin analysis for all customers (${startDate} to ${endDate})`);
 
-      // Load all shipments for the selected carrier
-      let allShipments: any[] = [];
+      // Convert dates to BigInt format used in Shipments table
+      const startDateTimestamp = Math.floor(new Date(startDate).getTime() / 1000);
+      const endDateTimestamp = Math.floor(new Date(endDate).getTime() / 1000);
+
+      // First, get all unique customers
+      let allCustomers: string[] = [];
       let from = 0;
       const batchSize = 1000;
       let hasMore = true;
       
       while (hasMore) {
+        console.log(`👥 Loading customers batch: records ${from}-${from + batchSize - 1}`);
+        
         const { data, error } = await supabase
           .from('Shipments')
-          .select('*')
-          .or(`"Booked Carrier".eq.${selectedCarrier},"Quoted Carrier".eq.${selectedCarrier}`)
+          .select('Customer')
           .not('Customer', 'is', null)
-          .not('Zip', 'is', null)
-          .not('Zip_1', 'is', null)
-          .gt('Revenue', 0)
-          .gt('"Carrier Expense"', 0)
+          .gte('"Scheduled Pickup Date"', startDateTimestamp)
+          .lte('"Scheduled Pickup Date"', endDateTimestamp)
           .range(from, from + batchSize - 1);
         
         if (error) {
@@ -267,12 +288,9 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
         }
         
         if (data && data.length > 0) {
-          allShipments = [...allShipments, ...data];
-          setProgress({ 
-            current: allShipments.length, 
-            total: allShipments.length + 1000, // Estimate
-            item: `Loading ${selectedCarrier} shipments...` 
-          });
+          const customers = data.map(d => d.Customer).filter(Boolean);
+          allCustomers = [...allCustomers, ...customers];
+          console.log(`👥 Loaded customers batch: ${customers.length} records (total loaded: ${allCustomers.length})`);
           from += batchSize;
           hasMore = data.length === batchSize;
         } else {
@@ -282,20 +300,11 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
         await new Promise(resolve => setTimeout(resolve, 50));
       }
 
-      console.log(`✅ Loaded ${allShipments.length} shipments for ${selectedCarrier}`);
+      // Get unique customers
+      const uniqueCustomers = [...new Set(allCustomers)].sort();
+      console.log(`✅ Found ${uniqueCustomers.length} unique customers in date range`);
 
-      // Group shipments by customer
-      const customerGroups = new Map<string, any[]>();
-      allShipments.forEach(shipment => {
-        const customer = shipment.Customer;
-        if (!customerGroups.has(customer)) {
-          customerGroups.set(customer, []);
-        }
-        customerGroups.get(customer)!.push(shipment);
-      });
-
-      console.log(`📊 Analyzing ${customerGroups.size} customers`);
-      setProgress({ current: 0, total: customerGroups.size, item: 'Converting and processing shipments...' });
+      setProgress({ current: 0, total: uniqueCustomers.length, item: 'Analyzing customers...' });
 
       // Create RFQ processor
       const processor = new RFQProcessor(project44Client, freshxClient);
@@ -304,24 +313,75 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
       let processedCount = 0;
 
       // Analyze each customer
-      for (const [customerName, customerShipments] of customerGroups) {
+      for (const customerName of uniqueCustomers) {
         processedCount++;
         setProgress({ 
           current: processedCount, 
-          total: customerGroups.size, 
-          item: `Processing ${customerName} (${customerShipments.length} shipments)...` 
+          total: uniqueCustomers.length, 
+          item: `Processing ${customerName}...` 
         });
+
+        // Load all shipments for this customer in the date range
+        let customerShipments: any[] = [];
+        let customerFrom = 0;
+        let customerHasMore = true;
+        
+        while (customerHasMore) {
+          const { data, error } = await supabase
+            .from('Shipments')
+            .select('*')
+            .eq('Customer', customerName)
+            .gte('"Scheduled Pickup Date"', startDateTimestamp)
+            .lte('"Scheduled Pickup Date"', endDateTimestamp)
+            .not('Zip', 'is', null)
+            .not('Zip_1', 'is', null)
+            .gt('Revenue', 0)
+            .gt('"Carrier Expense"', 0)
+            .range(customerFrom, customerFrom + batchSize - 1);
+          
+          if (error) {
+            console.error(`❌ Failed to load shipments for ${customerName}:`, error);
+            break;
+          }
+          
+          if (data && data.length > 0) {
+            customerShipments = [...customerShipments, ...data];
+            customerFrom += batchSize;
+            customerHasMore = data.length === batchSize;
+          } else {
+            customerHasMore = false;
+          }
+          
+          await new Promise(resolve => setTimeout(resolve, 25));
+        }
+
+        if (customerShipments.length === 0) {
+          console.log(`⚠️ No valid shipments found for ${customerName} in date range`);
+          continue;
+        }
 
         // Calculate original totals
         let originalRevenue = 0;
         let originalCarrierCost = 0;
+        const carrierUsage: { [carrierName: string]: number } = {};
 
         customerShipments.forEach(shipment => {
-          originalRevenue += parseFloat(shipment.Revenue) || 0;
-          originalCarrierCost += parseFloat(shipment['Carrier Expense']) || 0;
+          const revenue = parseFloat(shipment.Revenue) || 0;
+          const carrierCost = parseFloat(shipment['Carrier Expense']) || 0;
+          const carrierName = shipment['Booked Carrier'] || shipment['Quoted Carrier'];
+          
+          originalRevenue += revenue;
+          originalCarrierCost += carrierCost;
+          
+          if (carrierName) {
+            carrierUsage[carrierName] = (carrierUsage[carrierName] || 0) + 1;
+          }
         });
 
-        if (originalRevenue <= 0 || originalCarrierCost <= 0) continue;
+        if (originalRevenue <= 0 || originalCarrierCost <= 0) {
+          console.log(`⚠️ Invalid revenue/cost data for ${customerName}`);
+          continue;
+        }
 
         const originalMarginPercent = ((originalRevenue - originalCarrierCost) / originalRevenue) * 100;
 
@@ -337,7 +397,7 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
         }
 
         if (rfqs.length === 0) {
-          console.warn(`No valid RFQs created for ${customerName}`);
+          console.warn(`❌ No valid RFQs created for ${customerName}`);
           continue;
         }
 
@@ -405,10 +465,11 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
             costDifference,
             costDifferencePercent,
             status,
-            sampleShipments: rfqs
+            sampleShipments: rfqs,
+            carrierUsage
           });
 
-          console.log(`✅ Processed ${customerName}: ${totalNewQuotes} quotes, ${marginAdjustment.toFixed(1)}% margin adjustment`);
+          console.log(`✅ Processed ${customerName}: ${customerShipments.length} shipments, ${totalNewQuotes} quotes, ${marginAdjustment.toFixed(1)}% margin adjustment`);
 
         } catch (error) {
           console.error(`❌ Failed to process ${customerName}:`, error);
@@ -428,7 +489,8 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
             costDifference: 0,
             costDifferencePercent: 0,
             status: 'no_quotes',
-            sampleShipments: []
+            sampleShipments: [],
+            carrierUsage
           });
         }
 
@@ -440,7 +502,7 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
       analyses.sort((a, b) => Math.abs(b.revenueImpact) - Math.abs(a.revenueImpact));
       
       setMarginAnalyses(analyses);
-      console.log(`✅ Completed real market analysis for ${analyses.length} customers`);
+      console.log(`✅ Completed comprehensive margin analysis for ${analyses.length} customers`);
 
     } catch (error) {
       console.error('❌ Failed to run margin analysis:', error);
@@ -503,24 +565,33 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
       'Revenue Impact',
       'Cost Difference',
       'Cost Difference %',
-      'Status'
+      'Status',
+      'Top Carrier Used',
+      'Date Range'
     ];
 
-    const csvData = marginAnalyses.map(analysis => [
-      analysis.customerName,
-      analysis.originalShipments,
-      analysis.originalRevenue.toFixed(2),
-      analysis.originalCarrierCost.toFixed(2),
-      analysis.originalMarginPercent.toFixed(2),
-      analysis.newCarrierCost.toFixed(2),
-      analysis.newQuoteCount,
-      analysis.requiredMarginPercent.toFixed(2),
-      analysis.marginAdjustment.toFixed(2),
-      analysis.revenueImpact.toFixed(2),
-      analysis.costDifference.toFixed(2),
-      analysis.costDifferencePercent.toFixed(2),
-      analysis.status
-    ]);
+    const csvData = marginAnalyses.map(analysis => {
+      const topCarrier = Object.entries(analysis.carrierUsage)
+        .sort(([,a], [,b]) => b - a)[0]?.[0] || 'Unknown';
+      
+      return [
+        analysis.customerName,
+        analysis.originalShipments,
+        analysis.originalRevenue.toFixed(2),
+        analysis.originalCarrierCost.toFixed(2),
+        analysis.originalMarginPercent.toFixed(2),
+        analysis.newCarrierCost.toFixed(2),
+        analysis.newQuoteCount,
+        analysis.requiredMarginPercent.toFixed(2),
+        analysis.marginAdjustment.toFixed(2),
+        analysis.revenueImpact.toFixed(2),
+        analysis.costDifference.toFixed(2),
+        analysis.costDifferencePercent.toFixed(2),
+        analysis.status,
+        topCarrier,
+        `${startDate} to ${endDate}`
+      ];
+    });
 
     const csvContent = [csvHeaders, ...csvData]
       .map(row => row.join(','))
@@ -530,7 +601,7 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = `real-market-analysis-${selectedCarrier}-${Date.now()}.csv`;
+    link.download = `comprehensive-margin-analysis-${startDate}-to-${endDate}-${Date.now()}.csv`;
     link.click();
     URL.revokeObjectURL(url);
   };
@@ -570,10 +641,41 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
             <RefreshCw className="h-5 w-5 text-white" />
           </div>
           <div>
-            <h2 className="text-xl font-semibold text-gray-900">Real Market Rate Impact Analysis</h2>
+            <h2 className="text-xl font-semibold text-gray-900">Comprehensive Customer Margin Analysis</h2>
             <p className="text-sm text-gray-600">
-              Reprocess historical shipments through Project44 to get current market rates and determine required margin adjustments
+              Analyze ALL customers with date filtering - reprocess historical shipments through Project44 to determine required margin adjustments
             </p>
+          </div>
+        </div>
+
+        {/* Date Filter */}
+        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
+          <div className="flex items-center space-x-3 mb-3">
+            <Calendar className="h-5 w-5 text-blue-600" />
+            <span className="text-sm font-medium text-blue-900">Date Range Filter</span>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-blue-700 mb-2">Start Date</label>
+              <input
+                type="date"
+                value={startDate}
+                onChange={(e) => setStartDate(e.target.value)}
+                className="w-full px-3 py-2 border border-blue-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-blue-700 mb-2">End Date</label>
+              <input
+                type="date"
+                value={endDate}
+                onChange={(e) => setEndDate(e.target.value)}
+                className="w-full px-3 py-2 border border-blue-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              />
+            </div>
+          </div>
+          <div className="mt-2 text-xs text-blue-600">
+            Analyzing shipments from {startDate} to {endDate}
           </div>
         </div>
 
@@ -582,7 +684,7 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
               <Truck className="inline h-4 w-4 mr-1" />
-              Select Carrier to Analyze
+              Reference Carrier (for context)
             </label>
             {loadingCarriers ? (
               <div className="flex items-center space-x-2 p-3 border rounded-lg">
@@ -595,7 +697,7 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
                 onChange={(e) => setSelectedCarrier(e.target.value)}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
               >
-                <option value="">Choose a carrier...</option>
+                <option value="">Choose a carrier for reference...</option>
                 {carriers.map((carrier) => (
                   <option key={carrier.name} value={carrier.name}>
                     {carrier.name} ({carrier.shipmentCount} shipments, {formatCurrency(carrier.totalRevenue)} revenue)
@@ -606,18 +708,19 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
           </div>
 
           {/* Analysis Info */}
-          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+          <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
             <div className="flex items-start space-x-3">
-              <Zap className="h-5 w-5 text-blue-600 flex-shrink-0 mt-0.5" />
-              <div className="text-sm text-blue-800">
-                <p className="font-medium mb-2">Real Market Analysis Process:</p>
+              <Zap className="h-5 w-5 text-yellow-600 flex-shrink-0 mt-0.5" />
+              <div className="text-sm text-yellow-800">
+                <p className="font-medium mb-2">Comprehensive Analysis Process:</p>
                 <ul className="list-disc list-inside space-y-1 text-xs">
-                  <li>Loads historical shipments for selected carrier from database</li>
-                  <li>Converts shipments to RFQ format with current routing rules</li>
-                  <li>Processes sample shipments through Project44 API for current market rates</li>
-                  <li>Compares historical costs vs current market costs</li>
-                  <li>Calculates required margin adjustments to maintain revenue</li>
-                  <li>Provides actionable recommendations per customer</li>
+                  <li>Analyzes ALL customers in the selected date range (not just those using the reference carrier)</li>
+                  <li>Loads ALL shipments for each customer within the date range</li>
+                  <li>Converts sample shipments to RFQ format with current routing rules</li>
+                  <li>Processes through Project44 API to get current market rates</li>
+                  <li>Compares historical costs vs current market costs for each customer</li>
+                  <li>Calculates required margin adjustments to maintain revenue levels</li>
+                  <li>Provides customer-specific recommendations based on their usage patterns</li>
                 </ul>
               </div>
             </div>
@@ -628,7 +731,7 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
         <div className="mt-6 flex items-center space-x-4">
           <button
             onClick={runMarginAnalysis}
-            disabled={!selectedCarrier || loading || !project44Client}
+            disabled={!selectedCarrier || loading || !project44Client || !startDate || !endDate}
             className="flex items-center space-x-2 px-6 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors"
           >
             {loading ? (
@@ -638,8 +741,8 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
               </>
             ) : (
               <>
-                <RefreshCw className="h-4 w-4" />
-                <span>Run Real Market Analysis</span>
+                <Users className="h-4 w-4" />
+                <span>Analyze ALL Customers</span>
               </>
             )}
           </button>
@@ -680,10 +783,10 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
             <div className="flex items-center justify-between">
               <div>
                 <h3 className="text-lg font-semibold text-gray-900">
-                  Real Market Analysis Results: {selectedCarrier}
+                  Comprehensive Margin Analysis Results
                 </h3>
                 <p className="text-sm text-gray-600">
-                  {marginAnalyses.length} customers analyzed using current Project44 rates
+                  {marginAnalyses.length} customers analyzed using current Project44 rates ({startDate} to {endDate})
                 </p>
               </div>
               
@@ -762,11 +865,11 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
                 <tr>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Customer</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Shipments</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Original Revenue</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Revenue</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Cost Change</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Original Margin</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Required Margin</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Original → Required</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Adjustment</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Impact</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
                 </tr>
               </thead>
@@ -792,10 +895,7 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
                       </div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                      {analysis.originalMarginPercent.toFixed(1)}%
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                      {analysis.requiredMarginPercent.toFixed(1)}%
+                      {analysis.originalMarginPercent.toFixed(1)}% → {analysis.requiredMarginPercent.toFixed(1)}%
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <div className={`text-sm font-medium ${
@@ -804,6 +904,9 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
                       }`}>
                         {analysis.marginAdjustment > 0 ? '+' : ''}{analysis.marginAdjustment.toFixed(1)}%
                       </div>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                      {formatCurrency(analysis.revenueImpact)}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <div className={`flex items-center space-x-2 ${getStatusColor(analysis.status)}`}>
@@ -829,7 +932,8 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
           </div>
           <h3 className="text-lg font-medium text-gray-900 mb-2">No Analysis Results</h3>
           <p className="text-gray-600">
-            No processable shipment data found for {selectedCarrier}. Please select a different carrier or check your data.
+            No customers found with shipments in the selected date range ({startDate} to {endDate}).
+            Try adjusting your date range or check your data.
           </p>
         </div>
       )}

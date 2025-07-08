@@ -383,13 +383,13 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
         try {
           console.log(`🔍 Processing customer ${i + 1}/${customers.length}: ${customer}`);
           
+          // Load shipment history for this customer
           setProgress({ 
             current: i + 1, 
             total: customers.length, 
-            item: `Loading shipment history for ${customer}...` 
+            item: `${customer}: Loading shipment history...` 
           });
           
-          // Load shipment history for this customer
           const shipmentHistory = await loadShipmentHistoryForCustomer(customer);
           
           if (shipmentHistory.length === 0) {
@@ -399,12 +399,6 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
           
           totalShipmentsProcessed += shipmentHistory.length;
           console.log(`📋 Analyzing ${shipmentHistory.length} shipments for ${customer}`);
-          
-          setProgress({ 
-            current: i + 1, 
-            total: customers.length, 
-            item: `Analyzing ${shipmentHistory.length} shipments for ${customer}...` 
-          });
           
           // Group historical and current rates by carrier
           const carrierAnalysis = new Map<string, {
@@ -417,26 +411,31 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
           }>();
           
           // Process each shipment
-          for (let shipmentIndex = 0; shipmentIndex < shipmentHistory.length; shipmentIndex++) {
-            const shipment = shipmentHistory[shipmentIndex];
+          for (let shipmentIdx = 0; shipmentIdx < shipmentHistory.length; shipmentIdx++) {
+            const shipment = shipmentHistory[shipmentIdx];
+            
+            // Update progress for individual shipment
+            setProgress({ 
+              current: i + 1, 
+              total: customers.length, 
+              item: `${customer}: Processing shipment ${shipmentIdx + 1}/${shipmentHistory.length} (Invoice: ${shipment.invoice_number})` 
+            });
             
             try {
-              setProgress({ 
-                current: i + 1, 
-                total: customers.length, 
-                item: `${customer}: Processing shipment ${shipmentIndex + 1}/${shipmentHistory.length}...` 
-              });
+              console.log(`📦 Processing shipment ${shipmentIdx + 1}/${shipmentHistory.length} for ${customer}: Invoice ${shipment.invoice_number}`);
               
+              // Convert shipment to RFQ format
               const rfq = convertShipmentToRFQ(shipment);
+              console.log(`🔄 Converted shipment to RFQ: ${rfq.fromZip} → ${rfq.toZip}, ${rfq.pallets} pallets, ${rfq.grossWeight} lbs`);
               
               // Get current market rates for selected carriers only
               const rfqResult = await processor.processSingleRFQ(rfq, {
                 selectedCarriers,
                 pricingSettings,
                 selectedCustomer: customer
-              }, shipmentIndex);
+              }, shipmentIdx);
               
-              console.log(`📊 RFQ result for ${customer} shipment ${shipmentIndex + 1}: ${rfqResult.quotes.length} quotes, status: ${rfqResult.status}`);
+              console.log(`📊 RFQ API call completed for shipment ${shipmentIdx + 1}: ${rfqResult.quotes.length} quotes received, status: ${rfqResult.status}`);
               
               const historicalRate = parseFloat(shipment.carrier_quote.replace(/[^\d.]/g, '')) || 0;
               const historicalRevenue = parseFloat(shipment.revenue.replace(/[^\d.]/g, '')) || 0;
@@ -446,13 +445,14 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
               if (historicalRate > 0 && rfqResult.quotes.length > 0) {
                 // SCAC Matching: Only compare quotes from the same carrier as the historical shipment
                 const historicalSCAC = shipment.scac?.trim().toUpperCase();
-                
                 if (historicalSCAC) {
                   // Find current quotes that match the historical carrier's SCAC
                   const matchingQuotes = rfqResult.quotes.filter(quote => {
                     const currentSCAC = (quote.carrier.scac || quote.carrierCode)?.trim().toUpperCase();
                     return currentSCAC === historicalSCAC;
                   });
+                  
+                  console.log(`🎯 Found ${matchingQuotes.length} matching quotes for SCAC ${historicalSCAC}`);
                   
                   console.log(`🔍 SCAC Matching for ${customer}: Historical=${historicalSCAC}, Found ${matchingQuotes.length} matching current quotes`);
                   
@@ -477,18 +477,21 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
                     analysis.historicalMargins.push(historicalMargin);
                     analysis.shipmentCount++;
                     
-                    console.log(`✅ Added comparison: ${quote.carrier.name} (${historicalSCAC}) - Historical: ${formatCurrency(historicalRate)}, Current: ${formatCurrency(quote.carrierTotalRate)}`);
+                    console.log(`✅ Added comparison data: ${quote.carrier.name} (${historicalSCAC})`);
+                    console.log(`   Historical: ${formatCurrency(historicalRate)}, Current: ${formatCurrency(quote.carrierTotalRate)}`);
                   });
                 } else {
-                  console.warn(`⚠️ No SCAC found for historical shipment ${shipment.invoice_number} - skipping SCAC matching`);
+                  console.warn(`⚠️ No SCAC found for shipment ${shipmentIdx + 1} (Invoice: ${shipment.invoice_number}) - skipping`);
                 }
+              } else {
+                console.log(`⚠️ Skipping shipment ${shipmentIdx + 1}: Historical rate = ${formatCurrency(historicalRate)}, Current quotes = ${rfqResult.quotes.length}`);
               }
               
-              // Small delay between requests
+              // Small delay between individual shipment requests
               await new Promise(resolve => setTimeout(resolve, 150));
               
             } catch (error) {
-              console.warn(`⚠️ Failed to analyze shipment for ${customer}:`, error);
+              console.warn(`⚠️ Failed to analyze shipment ${shipmentIdx + 1} for ${customer}:`, error);
             }
           }
           

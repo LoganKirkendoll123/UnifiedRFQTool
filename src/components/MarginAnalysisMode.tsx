@@ -249,9 +249,11 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
       console.log(`🔍 Running comprehensive margin analysis for all customers (${startDate} to ${endDate})`);
       console.log(`📊 Using carrier group: ${selectedCarrierGroup}, carrier: ${selectedCarrier}`);
 
-      // Convert dates to BigInt format used in Shipments table
-      const startDateTimestamp = Math.floor(new Date(startDate).getTime() / 1000);
-      const endDateTimestamp = Math.floor(new Date(endDate).getTime() / 1000);
+      // Convert dates to int8 format used in Shipments table (milliseconds since epoch)
+      const startDateTimestamp = new Date(startDate).getTime();
+      const endDateTimestamp = new Date(endDate).getTime();
+      
+      console.log(`📅 Date range: ${startDate} (${startDateTimestamp}) to ${endDate} (${endDateTimestamp})`);
 
       // First, get all unique customers who have shipments with the selected carrier's SCAC
       let allCustomers: string[] = [];
@@ -358,9 +360,11 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
         }
 
         if (customerShipments.length === 0) {
-          console.log(`⚠️ No valid shipments found for ${customerName} with SCAC ${selectedCarrierSCAC} in date range`);
+          console.log(`⚠️ No valid shipments found for ${customerName} with SCAC ${selectedCarrierSCAC} in date range ${startDate} to ${endDate}`);
           continue;
         }
+        
+        console.log(`✅ Found ${customerShipments.length} shipments for ${customerName} with SCAC ${selectedCarrierSCAC}`);
 
         // Calculate original totals
         let originalRevenue = 0;

@@ -434,7 +434,7 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
                 selectedCarriers,
                 pricingSettings,
                 selectedCustomer: customer
-              }, 0);
+              }, shipmentIndex);
               
               console.log(`📊 RFQ result for ${customer} shipment ${shipmentIndex + 1}: ${rfqResult.quotes.length} quotes, status: ${rfqResult.status}`);
               
@@ -504,7 +504,7 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
           console.log(`   • Customer-carrier combinations with SCAC matches: ${carrierAnalysis.size}`);
           
           carrierAnalysis.forEach((data, carrierKey) => {
-            if (data.shipmentCount >= 2) { // Minimum 2 shipments for meaningful analysis
+            if (data.shipmentCount >= 1) { // Minimum 1 shipment for analysis
               console.log(`   • ${data.carrierName} (${data.carrierScac}): ${data.shipmentCount} matched shipments`);
               
               const avgHistoricalRate = data.historicalRates.reduce((sum, rate) => sum + rate, 0) / data.historicalRates.length;
@@ -517,9 +517,9 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
               let reasoning = 'Standard margin recommendation';
               let confidence: 'high' | 'medium' | 'low' = 'medium';
               
-              if (data.shipmentCount >= 10) {
+              if (data.shipmentCount >= 5) {
                 confidence = 'high';
-              } else if (data.shipmentCount >= 5) {
+              } else if (data.shipmentCount >= 2) {
                 confidence = 'medium';
               } else {
                 confidence = 'low';
@@ -559,6 +559,8 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
                 confidence,
                 reasoning
               });
+              
+              console.log(`📊 Generated recommendation: ${data.carrierName} - ${recommendedMargin.toFixed(1)}% margin (${confidence} confidence)`);
             }
           });
           
@@ -573,6 +575,8 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
           // Continue with next customer instead of failing completely
         }
       }
+      
+      console.log(`🏁 Margin analysis completed: Generated ${allResults.length} recommendations from ${totalShipmentsProcessed} total shipments`);
       
       setMarginResults(allResults);
       

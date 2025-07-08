@@ -233,6 +233,14 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
       return;
     }
 
+    // Get the SCAC of the selected carrier
+    const selectedCarrierInfo = groupCarriers.find(c => c.id === selectedCarrier);
+    const selectedCarrierSCAC = selectedCarrierInfo?.scac;
+    
+    if (!selectedCarrierSCAC) {
+      alert('Selected carrier does not have a SCAC code. Please select a different carrier.');
+      return;
+    }
     setLoading(true);
     setMarginAnalyses([]);
     setProgress({ current: 0, total: 0, item: 'Loading all customers...' });
@@ -245,20 +253,21 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
       const startDateTimestamp = Math.floor(new Date(startDate).getTime() / 1000);
       const endDateTimestamp = Math.floor(new Date(endDate).getTime() / 1000);
 
-      // First, get all unique customers
+      // First, get all unique customers who have shipments with the selected carrier's SCAC
       let allCustomers: string[] = [];
       let from = 0;
       const batchSize = 500; // Reduced batch size
       let hasMore = true;
       
       while (hasMore) {
-        console.log(`👥 Loading customers batch: records ${from}-${from + batchSize - 1}`);
+        console.log(`👥 Loading customers batch: records ${from}-${from + batchSize - 1} for SCAC ${selectedCarrierSCAC}`);
         
         const { data, error } = await retryWithBackoff(async () => {
           return await supabase
             .from('Shipments')
             .select('Customer')
             .not('Customer', 'is', null)
+            .eq('SCAC', selectedCarrierSCAC)
             .gte('"Scheduled Pickup Date"', startDateTimestamp)
             .lte('"Scheduled Pickup Date"', endDateTimestamp)
             .range(from, from + batchSize - 1);
@@ -272,7 +281,7 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
         if (data && data.length > 0) {
           const customers = data.map(d => d.Customer).filter(Boolean);
           allCustomers = [...allCustomers, ...customers];
-          console.log(`👥 Loaded customers batch: ${customers.length} records (total loaded: ${allCustomers.length})`);
+          console.log(`👥 Loaded customers batch: ${customers.length} records with SCAC ${selectedCarrierSCAC} (total loaded: ${allCustomers.length})`);
           from += batchSize;
           hasMore = data.length === batchSize;
         } else {
@@ -285,7 +294,12 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
 
       // Get unique customers
       const uniqueCustomers = [...new Set(allCustomers)].sort();
-      console.log(`✅ Found ${uniqueCustomers.length} unique customers in date range`);
+      console.log(`✅ Found ${uniqueCustomers.length} unique customers with SCAC ${selectedCarrierSCAC} in date range`);
+      
+      if (uniqueCustomers.length === 0) {
+        alert(`No customers found with shipments using carrier SCAC ${selectedCarrierSCAC} in the selected date range (${startDate} to ${endDate}). Please try a different date range or carrier.`);
+        return;
+      }
 
       setProgress({ current: 0, total: uniqueCustomers.length, item: 'Analyzing customers...' });
 
@@ -304,7 +318,7 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
           item: `Processing ${customerName}...` 
         });
 
-        // Load all shipments for this customer in the date range
+        // Load shipments for this customer with the selected carrier's SCAC in the date range
         let customerShipments: any[] = [];
         let customerFrom = 0;
         const customerBatchSize = 200; // Smaller batch size for individual customers
@@ -316,6 +330,7 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
               .from('Shipments')
               .select('*')
               .eq('Customer', customerName)
+              .eq('SCAC', selectedCarrierSCAC)
               .gte('"Scheduled Pickup Date"', startDateTimestamp)
               .lte('"Scheduled Pickup Date"', endDateTimestamp)
               .not('Zip', 'is', null)
@@ -343,7 +358,7 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
         }
 
         if (customerShipments.length === 0) {
-          console.log(`⚠️ No valid shipments found for ${customerName} in date range`);
+          console.log(`⚠️ No valid shipments found for ${customerName} with SCAC ${selectedCarrierSCAC} in date range`);
           continue;
         }
 
@@ -393,7 +408,7 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
         let totalNewQuotes = 0;
 
         try {
-          console.log(`🚛 Processing ${rfqs.length} RFQs for ${customerName} using carrier group ${selectedCarrierGroup}`);
+          console.log(`🚛 Processing ${rfqs.length} RFQs for ${customerName} using carrier group ${selectedCarrierGroup} (comparing to SCAC ${selectedCarrierSCAC})`);
           
           // Use the selected carrier group for processing
           const results = await processor.processRFQsForAccountGroup(rfqs, selectedCarrierGroup, {
@@ -458,7 +473,7 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
             carrierUsage
           });
 
-          console.log(`✅ Processed ${customerName}: ${customerShipments.length} shipments, ${totalNewQuotes} quotes, ${marginAdjustment.toFixed(1)}% margin adjustment`);
+          console.log(`✅ Processed ${customerName}: ${customerShipments.length} shipments with SCAC ${selectedCarrierSCAC}, ${totalNewQuotes} quotes, ${marginAdjustment.toFixed(1)}% margin adjustment`);
 
         } catch (error) {
           console.error(`❌ Failed to process ${customerName}:`, error);
@@ -491,7 +506,7 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
       analyses.sort((a, b) => Math.abs(b.revenueImpact) - Math.abs(a.revenueImpact));
       
       setMarginAnalyses(analyses);
-      console.log(`✅ Completed comprehensive margin analysis for ${analyses.length} customers using carrier group ${selectedCarrierGroup}`);
+      console.log(`✅ Completed comprehensive margin analysis for ${analyses.length} customers using carrier group ${selectedCarrierGroup} (SCAC ${selectedCarrierSCAC})`);
 
     } catch (error) {
       console.error('❌ Failed to run margin analysis:', error);
@@ -543,6 +558,7 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
 
     const selectedGroupName = carrierGroups.find(g => g.groupCode === selectedCarrierGroup)?.groupName || selectedCarrierGroup;
     const selectedCarrierName = groupCarriers.find(c => c.id === selectedCarrier)?.name || selectedCarrier;
+    const selectedCarrierSCAC = groupCarriers.find(c => c.id === selectedCarrier)?.scac || 'Unknown';
 
     const csvHeaders = [
       'Customer',
@@ -561,7 +577,8 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
       'Top Carrier Used',
       'Date Range',
       'Carrier Group Used',
-      'Reference Carrier'
+      'Reference Carrier',
+      'Reference Carrier SCAC'
     ];
 
     const csvData = marginAnalyses.map(analysis => {
@@ -585,7 +602,8 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
         topCarrier,
         `${startDate} to ${endDate}`,
         selectedGroupName,
-        selectedCarrierName
+        selectedCarrierName,
+        selectedCarrierSCAC
       ];
     });
 
@@ -597,7 +615,7 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = `margin-analysis-${selectedGroupName}-${startDate}-to-${endDate}-${Date.now()}.csv`;
+    link.download = `margin-analysis-${selectedCarrierSCAC}-${startDate}-to-${endDate}-${Date.now()}.csv`;
     link.click();
     URL.revokeObjectURL(url);
   };
@@ -747,8 +765,9 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
                 <p className="font-medium mb-2">Comprehensive Analysis Process:</p>
                 <ul className="list-disc list-inside space-y-1 text-xs">
                   <li>Analyzes ALL customers in the selected date range</li>
+                <li>Filters ALL shipments to only include those with the selected carrier's SCAC</li>
                   <li>Loads ALL shipments for each customer within the date range</li>
-                  <li>Converts sample shipments to RFQ format with current routing rules</li>
+                <li>Loads ALL shipments for each customer with the selected carrier's SCAC</li>
                   <li>Processes through Project44 API using the selected carrier group</li>
                   <li>Compares historical costs vs current market costs for each customer</li>
                   <li>Calculates required margin adjustments to maintain revenue levels</li>
@@ -796,7 +815,7 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
             <div className="flex items-center space-x-2 text-green-800 text-sm">
               <CheckCircle className="h-4 w-4" />
               <span>
-                Ready to analyze with carrier group: <strong>{selectedGroupName}</strong> using carrier: <strong>{selectedCarrierName}</strong>
+                Ready to analyze with carrier group: <strong>{selectedGroupName}</strong> using carrier: <strong>{selectedCarrierName}</strong> (SCAC: <strong>{groupCarriers.find(c => c.id === selectedCarrier)?.scac || 'Unknown'}</strong>)
               </span>
             </div>
           </div>
@@ -830,7 +849,7 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
                   Comprehensive Margin Analysis Results
                 </h3>
                 <p className="text-sm text-gray-600">
-                  {marginAnalyses.length} customers analyzed using {selectedGroupName} carrier group ({startDate} to {endDate})
+                  {marginAnalyses.length} customers analyzed using {selectedGroupName} carrier group with SCAC {groupCarriers.find(c => c.id === selectedCarrier)?.scac} ({startDate} to {endDate})
                 </p>
               </div>
               
@@ -976,7 +995,7 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
           </div>
           <h3 className="text-lg font-medium text-gray-900 mb-2">No Analysis Results</h3>
           <p className="text-gray-600">
-            No customers found with shipments in the selected date range ({startDate} to {endDate}) using carrier group {selectedGroupName}.
+            No customers found with shipments in the selected date range ({startDate} to {endDate}) using carrier SCAC {groupCarriers.find(c => c.id === selectedCarrier)?.scac} from group {selectedGroupName}.
             Try adjusting your date range or selecting a different carrier group.
           </p>
         </div>

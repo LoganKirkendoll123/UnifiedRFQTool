@@ -122,6 +122,34 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
     }
   }, [selectedCarrierGroup, project44Client]);
 
+  // Load saved analyses for the selected batch
+  useEffect(() => {
+    loadSavedAnalyses();
+  }, []);
+
+  const loadSavedAnalyses = async () => {
+    setLoadingSavedAnalyses(true);
+    try {
+      const { data, error } = await supabase
+        .from('margin_analyses')
+        .select('*')
+        .order('created_at', { ascending: false });
+      
+      if (error) {
+        throw error;
+      }
+      
+      const analyses = data || [];
+      setSavedAnalyses(analyses);
+      console.log(`✅ Loaded ${analyses.length} saved margin analyses`);
+    } catch (error) {
+      console.error('❌ Failed to load saved analyses:', error);
+      setSavedAnalyses([]);
+    } finally {
+      setLoadingSavedAnalyses(false);
+    }
+  };
+
   const loadCarrierGroups = async () => {
     if (!project44Client) return;
 
@@ -231,15 +259,16 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
 
   // Save analysis to database
   const saveAnalysis = async (analysisName: string) => {
-    if (!selectedCarrierGroup || !selectedCarrier || marginAnalyses.length === 0) return;
+    if (!selectedCarrierGroup || !selectedCarrier || marginAnalyses.length === 0) {
+      console.error('❌ Cannot save analysis - missing required data');
+      return;
+    }
 
     try {
-      console.log('💾 Saving margin analysis to database...');
-      
       const selectedGroupName = carrierGroups.find(g => g.groupCode === selectedCarrierGroup)?.groupName || selectedCarrierGroup;
       const selectedCarrierName = groupCarriers.find(c => c.id === selectedCarrier)?.name || selectedCarrier;
       const selectedCarrierSCAC = groupCarriers.find(c => c.id === selectedCarrier)?.scac || 'Unknown';
-      
+
       // Calculate summary statistics
       const totalCustomers = marginAnalyses.length;
       const customersRequiringIncrease = marginAnalyses.filter(a => a.status === 'requires_increase').length;
@@ -247,7 +276,7 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
       const customersAllowingDecrease = marginAnalyses.filter(a => a.status === 'allows_decrease').length;
       const customersNoQuotes = marginAnalyses.filter(a => a.status === 'no_quotes').length;
       const totalRevenueImpact = marginAnalyses.reduce((sum, a) => sum + a.revenueImpact, 0);
-      
+
       const { error } = await supabase
         .from('margin_analyses')
         .insert({
@@ -268,18 +297,64 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
           total_revenue_impact: totalRevenueImpact,
           created_by: 'margin-analysis-user'
         });
+
+      if (error) {
+        throw error;
+      }
+
+      console.log(`✅ Saved margin analysis: ${analysisName}`);
       
-      if (error) throw error;
-      
-      console.log('✅ Margin analysis saved successfully');
-      alert('Analysis saved successfully!');
+      // Reload saved analyses
+      await loadSavedAnalyses();
       
     } catch (error) {
-      console.error('❌ Failed to save margin analysis:', error);
-      alert('Failed to save analysis. Please try again.');
+      console.error('❌ Failed to save analysis:', error);
+      alert(`Failed to save analysis: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   };
-  
+
+  // Load saved analysis
+  const loadSavedAnalysis = async (analysis: any) => {
+    try {
+      console.log(`📋 Loading saved analysis: ${analysis.analysis_name}`);
+      
+      // Load the analysis results
+      setMarginAnalyses(analysis.analysis_results || []);
+      
+      console.log(`✅ Loaded analysis with ${analysis.analysis_results?.length || 0} results`);
+    } catch (error) {
+      console.error('❌ Failed to load saved analysis:', error);
+      alert(`Failed to load analysis: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  };
+
+  // Delete saved analysis
+  const deleteSavedAnalysis = async (analysisId: string) => {
+    if (!confirm('Are you sure you want to delete this analysis?')) {
+      return;
+    }
+
+    try {
+      const { error } = await supabase
+        .from('margin_analyses')
+        .delete()
+        .eq('id', analysisId);
+
+      if (error) {
+        throw error;
+      }
+
+      console.log(`✅ Deleted margin analysis: ${analysisId}`);
+      
+      // Reload saved analyses
+      await loadSavedAnalyses();
+      
+    } catch (error) {
+      console.error('❌ Failed to delete analysis:', error);
+      alert(`Failed to delete analysis: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  };
+
   const runMarginAnalysis = async () => {
     if (!selectedCarrierGroup || !selectedCarrier) {
       alert('Please select both a carrier group and a specific carrier');
@@ -589,7 +664,7 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
       // Prompt to save analysis
       if (analyses.length > 0) {
         const analysisName = prompt(
-          `Analysis complete! Save this analysis?\n\nEnter a name for this analysis:`,
+          `Analysis complete! Enter a name to save this analysis:`,
           `${selectedGroupName} - ${selectedCarrierName} - ${startDate} to ${endDate}`
         );
         
@@ -600,7 +675,11 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
 
     } catch (error) {
       console.error('❌ Failed to run margin analysis:', error);
-      alert(`Failed to run margin analysis: ${error instanceof Error ? error.message : 'Unknown error'}. Please try again.`);
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      alert(`Failed to run margin analysis: ${errorMessage}. Please try again.`);
+      
+      // Don't clear results on error - let user see what they have
+      // setMarginAnalyses([]);
     } finally {
       setLoading(false);
       setProgress({ current: 0, total: 0, item: '' });
@@ -952,9 +1031,8 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
                 <p className="font-medium mb-2">Comprehensive Analysis Process:</p>
                 <ul className="list-disc list-inside space-y-1 text-xs">
                   <li>Analyzes ALL customers in the selected date range</li>
-                <li>Filters ALL shipments to only include those with the selected carrier's SCAC</li>
-                  <li>Loads ALL shipments for each customer within the date range</li>
-                <li>Loads ALL shipments for each customer with the selected carrier's SCAC</li>
+                  <li>Filters ALL shipments to only include those with the selected carrier's SCAC</li>
+                  <li>Loads ALL shipments for each customer with the selected carrier's SCAC</li>
                   <li>Processes through Project44 API using the selected carrier group</li>
                   <li>Compares historical costs vs current market costs for each customer</li>
                   <li>Calculates required margin adjustments to maintain revenue levels</li>
@@ -999,7 +1077,7 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
             <button
               onClick={() => {
                 const analysisName = prompt(
-                  'Enter a name for this analysis:',
+                  'Enter a name to save this analysis:',
                   `${selectedGroupName} - ${selectedCarrierName} - ${startDate} to ${endDate}`
                 );
                 if (analysisName) {

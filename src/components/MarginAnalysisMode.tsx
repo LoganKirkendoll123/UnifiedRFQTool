@@ -128,34 +128,52 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
   const loadCustomers = async () => {
     setConnectionError('');
     try {
-      console.log('🔍 Loading all customers from Shipments table...');
+      console.log('🔍 Loading ALL customers from Shipments table in batches...');
       
-      const { data, error } = await supabase
-        .from('Shipments')
-        .select('Customer')
-        .not('Customer', 'is', null);
+      // Load all customers in batches of 1000
+      let allCustomers: any[] = [];
+      let from = 0;
+      const batchSize = 1000;
+      let hasMore = true;
       
-      if (error) {
-        console.error('❌ Supabase query error:', error);
-        setConnectionError(`Database connection error: ${error.message}. Please check your Supabase configuration.`);
+      while (hasMore) {
+        const { data, error } = await supabase
+          .from('Shipments')
+          .select('Customer')
+          .not('Customer', 'is', null)
+          .range(from, from + batchSize - 1);
+        
+        if (error) {
+          console.error('❌ Supabase query error:', error);
+          setConnectionError(`Database connection error: ${error.message}. Please check your Supabase configuration.`);
+          setCustomers([]);
+          return;
+        }
+        
+        if (data && data.length > 0) {
+          allCustomers = [...allCustomers, ...data];
+          from += batchSize;
+          hasMore = data.length === batchSize; // Continue if we got a full batch
+          console.log(`📋 Loaded customer batch: ${data.length} customers (total: ${allCustomers.length})`);
+        } else {
+          hasMore = false;
+        }
+      }
+      
+      if (!allCustomers || allCustomers.length === 0) {
+        setConnectionError('Shipments table is empty or contains no valid customer records. Please ensure your historical shipment data is loaded into the Shipments table.');
         setCustomers([]);
         return;
       }
       
-      if (!data) {
-        setConnectionError('No data returned from Shipments table. Please check your database permissions.');
-        setCustomers([]);
-        return;
-      }
-      
-      const uniqueCustomers = [...new Set(data.map(d => d.Customer).filter(Boolean))].sort();
+      const uniqueCustomers = [...new Set(allCustomers.map(d => d.Customer).filter(Boolean))].sort();
       setCustomers(uniqueCustomers);
       
       if (uniqueCustomers.length === 0) {
         setConnectionError('Shipments table is empty or contains no valid customer records. Please ensure your historical shipment data is loaded into the Shipments table.');
       }
       
-      console.log(`✅ Loaded ${uniqueCustomers.length} customers for margin analysis`);
+      console.log(`✅ Loaded ${uniqueCustomers.length} unique customers from ${allCustomers.length} total records`);
     } catch (error) {
       console.error('❌ Failed to load customers:', error);
       const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';

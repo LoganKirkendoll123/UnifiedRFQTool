@@ -17,6 +17,7 @@ import {
   Save,
   Award,
   Calendar,
+  AlertCircle,
   Package,
   MapPin,
   Truck,
@@ -88,6 +89,7 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
   const [marginResults, setMarginResults] = useState<CustomerCarrierMarginResult[]>([]);
   const [loading, setLoading] = useState(true);
   const [analyzing, setAnalyzing] = useState(false);
+  const [error, setError] = useState<string>('');
   const [progress, setProgress] = useState({ current: 0, total: 0, item: '' });
   const [overallStats, setOverallStats] = useState({
     dateRange: '',
@@ -300,11 +302,34 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
   };
 
   const runMarginAnalysis = async () => {
+    console.log('🎯 Starting margin analysis...');
+    setError('');
+    
+    // Validation with user feedback
     const selectedCarrierIds = getSelectedCarrierIds();
-    if (!project44Client || customers.length === 0 || selectedCarrierIds.length === 0) {
-      console.warn('❌ Missing requirements for margin analysis');
+    
+    if (!project44Client) {
+      const errorMsg = 'Project44 client not available. Please configure your Project44 API credentials.';
+      setError(errorMsg);
+      console.error('❌', errorMsg);
       return;
     }
+    
+    if (customers.length === 0) {
+      const errorMsg = 'No customers found in database. Please check your Supabase connection and data.';
+      setError(errorMsg);
+      console.error('❌', errorMsg);
+      return;
+    }
+    
+    if (selectedCarrierIds.length === 0) {
+      const errorMsg = 'No carriers selected. Please select at least one carrier above.';
+      setError(errorMsg);
+      console.error('❌', errorMsg);
+      return;
+    }
+
+    console.log(`✅ Validation passed: ${customers.length} customers, ${selectedCarrierIds.length} carriers`);
 
     setAnalyzing(true);
     setProgress({ current: 0, total: customers.length, item: '' });
@@ -327,16 +352,30 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
         });
         
         try {
+          console.log(`🔍 Processing customer ${i + 1}/${customers.length}: ${customer}`);
+          
+          setProgress({ 
+            current: i + 1, 
+            total: customers.length, 
+            item: `Loading shipment history for ${customer}...` 
+          });
+          
           // Load shipment history for this customer
           const shipmentHistory = await loadShipmentHistoryForCustomer(customer);
           
           if (shipmentHistory.length === 0) {
-            console.log(`⚠️ No shipment history found for ${customer}`);
+            console.log(`⚠️ No shipment history found for ${customer} in date range ${dateRange.startDate} to ${dateRange.endDate}`);
             continue;
           }
           
           totalShipmentsProcessed += shipmentHistory.length;
           console.log(`📋 Analyzing ${shipmentHistory.length} shipments for ${customer}`);
+          
+          setProgress({ 
+            current: i + 1, 
+            total: customers.length, 
+            item: `Analyzing ${shipmentHistory.length} shipments for ${customer}...` 
+          });
           
           // Group historical and current rates by carrier
           const carrierAnalysis = new Map<string, {
@@ -349,8 +388,16 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
           }>();
           
           // Process each shipment
-          for (const shipment of shipmentHistory) {
+          for (let shipmentIndex = 0; shipmentIndex < shipmentHistory.length; shipmentIndex++) {
+            const shipment = shipmentHistory[shipmentIndex];
+            
             try {
+              setProgress({ 
+                current: i + 1, 
+                total: customers.length, 
+                item: `${customer}: Processing shipment ${shipmentIndex + 1}/${shipmentHistory.length}...` 
+              });
+              
               const rfq = convertShipmentToRFQ(shipment);
               
               // Get current market rates for selected carriers only
@@ -359,6 +406,8 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
                 pricingSettings,
                 selectedCustomer: customer
               }, 0);
+              
+              console.log(`📊 RFQ result for ${customer} shipment ${shipmentIndex + 1}: ${rfqResult.quotes.length} quotes, status: ${rfqResult.status}`);
               
               const historicalRate = parseFloat(shipment.carrier_quote.replace(/[^\d.]/g, '')) || 0;
               const historicalRevenue = parseFloat(shipment.revenue.replace(/[^\d.]/g, '')) || 0;
@@ -398,6 +447,8 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
                     analysis.currentRates.push(quote.carrierTotalRate);
                     analysis.historicalMargins.push(historicalMargin);
                     analysis.shipmentCount++;
+                    
+                    console.log(`✅ Added comparison: ${quote.carrier.name} (${historicalSCAC}) - Historical: ${formatCurrency(historicalRate)}, Current: ${formatCurrency(quote.carrierTotalRate)}`);
                   });
                 } else {
                   console.warn(`⚠️ No SCAC found for historical shipment ${shipment.invoice_number} - skipping SCAC matching`);
@@ -413,6 +464,12 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
           }
           
           // Calculate recommendations for each customer-carrier combination
+          setProgress({ 
+            current: i + 1, 
+            total: customers.length, 
+            item: `Calculating recommendations for ${customer}...` 
+          });
+          
           console.log(`📊 SCAC Analysis Summary for ${customer}:`);
           console.log(`   • Total shipments processed: ${shipmentHistory.length}`);
           console.log(`   • Customer-carrier combinations with SCAC matches: ${carrierAnalysis.size}`);
@@ -477,7 +534,14 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
           });
           
         } catch (error) {
-          console.error(`❌ Failed to analyze customer ${customer}:`, error);
+          const errorMsg = `Failed to analyze customer ${customer}: ${error instanceof Error ? error.message : 'Unknown error'}`;
+          console.error(`❌ ${errorMsg}`, error);
+          setProgress({ 
+            current: i + 1, 
+            total: customers.length, 
+            item: `Error with ${customer}: ${errorMsg}` 
+          });
+          // Continue with next customer instead of failing completely
         }
       }
       
@@ -506,7 +570,9 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
       console.log(`✅ Margin analysis completed: ${allResults.length} customer-carrier combinations analyzed`);
       
     } catch (error) {
-      console.error('❌ Margin analysis failed:', error);
+      const errorMsg = `Margin analysis failed: ${error instanceof Error ? error.message : 'Unknown error'}`;
+      setError(errorMsg);
+      console.error('❌', errorMsg, error);
     } finally {
       setAnalyzing(false);
       setProgress({ current: 0, total: 0, item: '' });
@@ -708,7 +774,7 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
         </div>
 
         {Object.values(selectedCarriers).filter(Boolean).length === 0 && (
-          <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+          <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-4">
             <div className="flex items-center space-x-2 text-yellow-800">
               <AlertTriangle className="h-4 w-4" />
               <span className="text-sm font-medium">
@@ -717,6 +783,31 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
             </div>
           </div>
         )}
+        
+        {error && (
+          <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-4">
+            <div className="flex items-start space-x-2 text-red-800">
+              <AlertCircle className="h-4 w-4 flex-shrink-0 mt-0.5" />
+              <div>
+                <div className="text-sm font-medium">Analysis Error</div>
+                <div className="text-sm mt-1">{error}</div>
+              </div>
+            </div>
+          </div>
+        )}
+        
+        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+          <div className="text-sm text-blue-800">
+            <p className="font-medium mb-1">Analysis Process:</p>
+            <ol className="list-decimal list-inside space-y-1 text-xs">
+              <li>Load historical shipment data for each customer in selected date range</li>
+              <li>Convert historical shipments to RFQs and get current market rates</li>
+              <li>Match historical carriers to current quotes by SCAC code</li>
+              <li>Compare historical vs current rates for the same carriers</li>
+              <li>Generate margin recommendations based on price differences</li>
+            </ol>
+          </div>
+        </div>
       </div>
 
       {/* Progress */}
@@ -726,7 +817,7 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
             <Loader className="h-5 w-5 text-blue-600 animate-spin" />
             <div className="flex-1">
               <div className="text-sm font-medium text-blue-900">
-                Processing customer {progress.current} of {progress.total}
+                Analysis Progress: {progress.current} of {progress.total} customers
               </div>
               <div className="text-xs text-blue-700">
                 Date range: {dateRange.startDate} to {dateRange.endDate}

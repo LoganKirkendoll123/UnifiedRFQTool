@@ -255,14 +255,14 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
       return;
     }
 
-    // Convert JavaScript dates to Excel serial numbers (days since 1900-01-01)
+    // Convert JavaScript dates to Excel serial numbers
     const convertToExcelSerial = (dateString: string): number => {
       const date = new Date(dateString);
-      const excelEpoch = new Date('1900-01-01');
+      // Excel epoch is January 1, 1900, but we need to account for Excel's leap year bug
+      const excelEpoch = new Date('1899-12-30'); // Use Dec 30, 1899 to account for Excel's bug
       const diffTime = date.getTime() - excelEpoch.getTime();
       const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
-      // Excel considers 1900 as a leap year (which it wasn't), so we add 2 to account for this
-      return diffDays + 2;
+      return diffDays;
     };
 
     setLoading(true);

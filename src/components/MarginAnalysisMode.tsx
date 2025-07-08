@@ -21,7 +21,8 @@ import {
   Package,
   MapPin,
   Truck,
-  Play
+  Play,
+  XCircle
 } from 'lucide-react';
 import { Project44APIClient, FreshXAPIClient, CarrierGroup } from '../utils/apiClient';
 import { formatCurrency } from '../utils/pricingCalculator';
@@ -91,7 +92,10 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
   const [analyzing, setAnalyzing] = useState(false);
   const [error, setError] = useState<string>('');
   const [connectionError, setConnectionError] = useState<string>('');
+  const [reprocessing, setReprocessing] = useState(false);
   const [progress, setProgress] = useState({ current: 0, total: 0, item: '' });
+  const [analysisComplete, setAnalysisComplete] = useState(false);
+  const [analysisError, setAnalysisError] = useState<string>('');
   const [overallStats, setOverallStats] = useState({
     dateRange: '',
     totalShipments: 0,
@@ -492,9 +496,10 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
 
     console.log(`✅ Validation passed: ${customers.length} customers, ${selectedCarrierIds.length} carriers`);
 
-    setAnalyzing(true);
-    setProgress({ current: 0, total: customers.length, item: '' });
-    setMarginResults([]);
+    setReprocessing(true);
+    setProgress({ current: 0, total: 0, item: '' });
+    setAnalysisComplete(false);
+    setAnalysisError('');
 
     try {
       console.log(`🧮 Starting comprehensive margin analysis for ${customers.length} customers and ${selectedCarrierIds.length} carriers...`);
@@ -743,6 +748,11 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
       
       console.log(`🏁 Margin analysis completed: Generated ${allResults.length} recommendations from ${totalShipmentsProcessed} total shipments`);
       
+      console.log(`✅ Margin analysis completed: ${allResults.length} new responses for comparison`);
+      
+      // Mark analysis as complete and show results
+      setAnalysisComplete(true);
+      
       setMarginResults(allResults);
       
       // Calculate overall statistics
@@ -768,11 +778,12 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
       console.log(`✅ Margin analysis completed: ${allResults.length} customer-carrier combinations analyzed`);
       
     } catch (error) {
-      const errorMsg = `Margin analysis failed: ${error instanceof Error ? error.message : 'Unknown error'}`;
-      setError(errorMsg);
-      console.error('❌', errorMsg, error);
+      console.error('❌ Margin analysis failed:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Analysis failed';
+      setAnalysisError(errorMessage);
+      setAnalysisComplete(false);
     } finally {
-      setAnalyzing(false);
+      setReprocessing(false);
       setProgress({ current: 0, total: 0, item: '' });
     }
   };
@@ -835,6 +846,19 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
 
   return (
     <div className="space-y-6">
+      {/* Analysis Error Display */}
+      {analysisError && (
+        <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+          <div className="flex items-center space-x-2">
+            <XCircle className="h-5 w-5 text-red-600" />
+            <div>
+              <p className="font-medium text-red-900">Analysis Failed</p>
+              <p className="text-sm text-red-700 mt-1">{analysisError}</p>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Carrier Selection */}
       <div className="bg-white rounded-lg shadow-md p-6">
         <h3 className="text-lg font-semibold text-gray-900 mb-4">Select Carriers for Analysis</h3>
@@ -1083,9 +1107,22 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
         </div>
       )}
 
-      {/* Results */}
-      {marginResults.length > 0 && (
-        <>
+      {/* Analysis Results - Only show when analysis is complete AND we have results */}
+      {analysisComplete && marginResults.length > 0 && (
+        <div className="space-y-6">
+          {/* Analysis Complete Banner */}
+          <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+            <div className="flex items-center space-x-2">
+              <CheckCircle className="h-5 w-5 text-green-600" />
+              <div>
+                <p className="font-medium text-green-900">Margin Analysis Complete!</p>
+                <p className="text-sm text-green-700 mt-1">
+                  Processed {overallStats.totalShipments} shipments vs {marginResults.length} customer-carrier combinations
+                </p>
+              </div>
+            </div>
+          </div>
+
           {/* SCAC Matching Summary */}
           <div className="bg-white rounded-lg shadow-md p-6">
             <div className="flex items-center space-x-3 mb-4">
@@ -1254,7 +1291,27 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
               </table>
             </div>
           </div>
-        </>
+        </div>
+      )}
+
+      {/* No Results Message */}
+      {analysisComplete && marginResults.length === 0 && (
+        <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+          <div className="flex items-center space-x-2">
+            <AlertTriangle className="h-5 w-5 text-yellow-600" />
+            <div>
+              <p className="font-medium text-yellow-900">Analysis Complete - No New Quotes</p>
+              <p className="text-sm text-yellow-700 mt-1">
+                The analysis completed successfully but no new quotes were received. This could be due to:
+              </p>
+              <ul className="text-sm text-yellow-700 mt-2 list-disc list-inside">
+                <li>No carriers responded during the analysis timeframe</li>
+                <li>All carriers were unavailable for the selected routes</li>
+                <li>API connection issues during processing</li>
+              </ul>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

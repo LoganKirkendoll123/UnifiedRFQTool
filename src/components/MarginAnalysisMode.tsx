@@ -332,27 +332,42 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
               const historicalMargin = historicalRevenue > 0 ? (historicalProfit / historicalRevenue) * 100 : 0;
               
               if (historicalRate > 0 && rfqResult.quotes.length > 0) {
-                // Process each current quote
-                rfqResult.quotes.forEach(quote => {
-                  const carrierKey = `${quote.carrier.name}|${quote.carrier.scac || ''}`;
+                // SCAC Matching: Only compare quotes from the same carrier as the historical shipment
+                const historicalSCAC = shipment.scac?.trim().toUpperCase();
+                
+                if (historicalSCAC) {
+                  // Find current quotes that match the historical carrier's SCAC
+                  const matchingQuotes = rfqResult.quotes.filter(quote => {
+                    const currentSCAC = (quote.carrier.scac || quote.carrierCode)?.trim().toUpperCase();
+                    return currentSCAC === historicalSCAC;
+                  });
                   
-                  if (!carrierAnalysis.has(carrierKey)) {
-                    carrierAnalysis.set(carrierKey, {
-                      carrierName: quote.carrier.name,
-                      carrierScac: quote.carrier.scac,
-                      historicalRates: [],
-                      currentRates: [],
-                      historicalMargins: [],
-                      shipmentCount: 0
-                    });
-                  }
+                  console.log(`🔍 SCAC Matching for ${customer}: Historical=${historicalSCAC}, Found ${matchingQuotes.length} matching current quotes`);
                   
-                  const analysis = carrierAnalysis.get(carrierKey)!;
-                  analysis.historicalRates.push(historicalRate);
-                  analysis.currentRates.push(quote.carrierTotalRate);
-                  analysis.historicalMargins.push(historicalMargin);
-                  analysis.shipmentCount++;
-                });
+                  // Process only matching quotes (same carrier, historical vs current)
+                  matchingQuotes.forEach(quote => {
+                    const carrierKey = `${quote.carrier.name}|${historicalSCAC}`;
+                    
+                    if (!carrierAnalysis.has(carrierKey)) {
+                      carrierAnalysis.set(carrierKey, {
+                        carrierName: quote.carrier.name,
+                        carrierScac: historicalSCAC,
+                        historicalRates: [],
+                        currentRates: [],
+                        historicalMargins: [],
+                        shipmentCount: 0
+                      });
+                    }
+                    
+                    const analysis = carrierAnalysis.get(carrierKey)!;
+                    analysis.historicalRates.push(historicalRate);
+                    analysis.currentRates.push(quote.carrierTotalRate);
+                    analysis.historicalMargins.push(historicalMargin);
+                    analysis.shipmentCount++;
+                  });
+                } else {
+                  console.warn(`⚠️ No SCAC found for historical shipment ${shipment.invoice_number} - skipping SCAC matching`);
+                }
               }
               
               // Small delay between requests
@@ -364,8 +379,14 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
           }
           
           // Calculate recommendations for each customer-carrier combination
+          console.log(`📊 SCAC Analysis Summary for ${customer}:`);
+          console.log(`   • Total shipments processed: ${shipmentHistory.length}`);
+          console.log(`   • Customer-carrier combinations with SCAC matches: ${carrierAnalysis.size}`);
+          
           carrierAnalysis.forEach((data, carrierKey) => {
             if (data.shipmentCount >= 2) { // Minimum 2 shipments for meaningful analysis
+              console.log(`   • ${data.carrierName} (${data.carrierScac}): ${data.shipmentCount} matched shipments`);
+              
               const avgHistoricalRate = data.historicalRates.reduce((sum, rate) => sum + rate, 0) / data.historicalRates.length;
               const avgCurrentRate = data.currentRates.reduce((sum, rate) => sum + rate, 0) / data.currentRates.length;
               const avgHistoricalMargin = data.historicalMargins.reduce((sum, margin) => sum + margin, 0) / data.historicalMargins.length;
@@ -387,19 +408,19 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
               if (avgPotentialSavings > 100) {
                 // Significant savings opportunity
                 recommendedMargin = Math.min(35, avgHistoricalMargin + 5);
-                reasoning = `High savings opportunity (${formatCurrency(avgPotentialSavings)}) - increase margin to capture value`;
+                reasoning = `Same carrier now ${formatCurrency(avgPotentialSavings)} cheaper - increase margin to capture savings while remaining competitive`;
               } else if (avgPotentialSavings > 0) {
                 // Some savings available
                 recommendedMargin = Math.min(30, avgHistoricalMargin + 2);
-                reasoning = `Moderate savings available - slight margin increase recommended`;
+                reasoning = `Carrier rates ${formatCurrency(avgPotentialSavings)} lower than historical - moderate margin increase opportunity`;
               } else if (avgPotentialSavings < -100) {
                 // Market rates higher than historical
                 recommendedMargin = Math.max(18, avgHistoricalMargin - 3);
-                reasoning = `Market rates increased - consider lower margin to remain competitive`;
+                reasoning = `Same carrier now ${formatCurrency(Math.abs(avgPotentialSavings))} more expensive - reduce margin to maintain competitiveness`;
               } else {
                 // Rates similar
                 recommendedMargin = Math.max(20, Math.min(28, avgHistoricalMargin));
-                reasoning = `Market rates stable - maintain current margin strategy`;
+                reasoning = `Carrier pricing stable vs historical - maintain current margin strategy with minor optimization`;
               }
               
               const totalOpportunity = avgPotentialSavings > 0 ? avgPotentialSavings * data.shipmentCount * 0.5 : 0;
@@ -572,6 +593,42 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
       {/* Results */}
       {marginResults.length > 0 && (
         <>
+          {/* SCAC Matching Summary */}
+          <div className="bg-white rounded-lg shadow-md p-6">
+            <div className="flex items-center space-x-3 mb-4">
+              <div className="bg-blue-600 p-2 rounded-lg">
+                <Truck className="h-5 w-5 text-white" />
+              </div>
+              <div>
+                <h3 className="text-lg font-semibold text-gray-900">SCAC Matching Analysis</h3>
+                <p className="text-sm text-gray-600">
+                  Historical carrier rates compared to current market rates from the same carriers (matched by SCAC)
+                </p>
+              </div>
+            </div>
+            
+            <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+              <div className="flex items-start space-x-3">
+                <CheckCircle className="h-5 w-5 text-green-600 flex-shrink-0 mt-0.5" />
+                <div className="text-sm text-green-800">
+                  <p className="font-medium mb-2">✅ SCAC Matching Enabled</p>
+                  <div className="space-y-1 text-xs">
+                    <p>• Historical shipments are matched to current quotes by carrier SCAC code</p>
+                    <p>• Only comparing the same carrier's historical vs current pricing</p>
+                    <p>• This ensures true apples-to-apples margin analysis</p>
+                    <p>• Results show genuine carrier-specific margin opportunities</p>
+                  </div>
+                  <div className="mt-3 p-2 bg-green-100 rounded border">
+                    <p className="font-medium text-green-900 text-sm">Example Analysis:</p>
+                    <p className="text-xs text-green-800">
+                      Customer ABC + Carrier XYZ (SCAC: ABCD): Historical avg $1,200 → Current market $1,100 = $100 savings opportunity
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
           {/* Overall Statistics */}
           <div className="bg-white rounded-lg shadow-md p-6">
             <div className="flex items-center justify-between mb-6">

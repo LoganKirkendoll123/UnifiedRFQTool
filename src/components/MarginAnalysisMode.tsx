@@ -186,9 +186,17 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
       const commodity = (shipment.Commodities || '').toLowerCase();
       const isReefer = commodity.includes('refrigerat') || commodity.includes('frozen') || commodity.includes('chilled');
       
+      // Convert Excel serial date to JavaScript date
+      const convertFromExcelSerial = (serial: number): string => {
+        const excelEpoch = new Date('1900-01-01');
+        // Subtract 2 to account for Excel's leap year bug
+        const date = new Date(excelEpoch.getTime() + (serial - 2) * 24 * 60 * 60 * 1000);
+        return date.toISOString().split('T')[0];
+      };
+
       // Create pickup date (use scheduled pickup date or default to today)
       const pickupDate = shipment['Scheduled Pickup Date'] ? 
-        new Date(shipment['Scheduled Pickup Date']).toISOString().split('T')[0] :
+        convertFromExcelSerial(shipment['Scheduled Pickup Date']) :
         new Date().toISOString().split('T')[0];
 
       const rfq: RFQRow = {
@@ -241,6 +249,17 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
       alert('Selected carrier does not have a SCAC code. Please select a different carrier.');
       return;
     }
+
+    // Convert JavaScript dates to Excel serial numbers (days since 1900-01-01)
+    const convertToExcelSerial = (dateString: string): number => {
+      const date = new Date(dateString);
+      const excelEpoch = new Date('1900-01-01');
+      const diffTime = date.getTime() - excelEpoch.getTime();
+      const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+      // Excel considers 1900 as a leap year (which it wasn't), so we add 2 to account for this
+      return diffDays + 2;
+    };
+
     setLoading(true);
     setMarginAnalyses([]);
     setProgress({ current: 0, total: 0, item: 'Loading all customers...' });
@@ -249,11 +268,11 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
       console.log(`🔍 Running comprehensive margin analysis for all customers (${startDate} to ${endDate})`);
       console.log(`📊 Using carrier group: ${selectedCarrierGroup}, carrier: ${selectedCarrier}`);
 
-      // Convert dates to int8 format used in Shipments table (milliseconds since epoch)
-      const startDateTimestamp = new Date(startDate).getTime();
-      const endDateTimestamp = new Date(endDate).getTime();
+      // Convert dates to Excel serial numbers (int8 format used in Shipments table)
+      const startDateSerial = convertToExcelSerial(startDate);
+      const endDateSerial = convertToExcelSerial(endDate);
       
-      console.log(`📅 Date range: ${startDate} (${startDateTimestamp}) to ${endDate} (${endDateTimestamp})`);
+      console.log(`📅 Date range: ${startDate} (serial: ${startDateSerial}) to ${endDate} (serial: ${endDateSerial})`);
 
       // First, get all unique customers who have shipments with the selected carrier's SCAC
       let allCustomers: string[] = [];
@@ -270,8 +289,8 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
             .select('Customer')
             .not('Customer', 'is', null)
             .eq('SCAC', selectedCarrierSCAC)
-            .gte('"Scheduled Pickup Date"', startDateTimestamp)
-            .lte('"Scheduled Pickup Date"', endDateTimestamp)
+            .gte('"Scheduled Pickup Date"', startDateSerial)
+            .lte('"Scheduled Pickup Date"', endDateSerial)
             .range(from, from + batchSize - 1);
         });
         
@@ -333,8 +352,8 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
               .select('*')
               .eq('Customer', customerName)
               .eq('SCAC', selectedCarrierSCAC)
-              .gte('"Scheduled Pickup Date"', startDateTimestamp)
-              .lte('"Scheduled Pickup Date"', endDateTimestamp)
+              .gte('"Scheduled Pickup Date"', startDateSerial)
+              .lte('"Scheduled Pickup Date"', endDateSerial)
               .not('Zip', 'is', null)
               .not('Zip_1', 'is', null)
               .gt('Revenue', 0)

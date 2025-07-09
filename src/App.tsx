@@ -398,7 +398,6 @@ function App() {
               <MarginAnalysisMode
                 project44Client={project44Client}
                 freshxClient={freshxClient}
-                rfqProcessor={rfqProcessor}
                 pricingSettings={pricingSettings}
                 selectedCustomer={selectedCustomer}
                 onMarginRecommendation={(customer, carrier, recommendedMargin) => {

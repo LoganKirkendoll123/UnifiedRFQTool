@@ -71,14 +71,12 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
   const [groupCarriers, setGroupCarriers] = useState<Carrier[]>([]);
   const [selectedCarrier, setSelectedCarrier] = useState<string>('');
   const [loadingGroups, setLoadingGroups] = useState(false);
-  const [savedAnalyses, setSavedAnalyses] = useState<any[]>([]);
   const [loadingCarriers, setLoadingCarriers] = useState(false);
   
   const [marginAnalyses, setMarginAnalyses] = useState<CustomerMarginAnalysis[]>([]);
   const [loading, setLoading] = useState(false);
   const [progress, setProgress] = useState({ current: 0, total: 0, item: '' });
   const [searchTerm, setSearchTerm] = useState('');
-  const [loadingSavedAnalyses, setLoadingSavedAnalyses] = useState(false);
   const [sortBy, setSortBy] = useState<'customer' | 'revenue' | 'margin' | 'impact'>('revenue');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
   

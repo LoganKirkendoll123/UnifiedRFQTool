@@ -472,6 +472,7 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
           item: `Processing ${customerName}...` 
         });
 
+       try {
         // Load shipments for this customer with the selected carrier's SCAC in the date range
         let customerShipments: any[] = [];
         let customerFrom = 0;

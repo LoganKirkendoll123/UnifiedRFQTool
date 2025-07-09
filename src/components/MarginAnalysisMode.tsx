@@ -29,7 +29,6 @@ import { formatCurrency } from '../utils/pricingCalculator';
 import { PricingSettings, RFQRow } from '../types';
 import { supabase } from '../utils/supabase';
 import { RFQProcessor } from '../utils/rfqProcessor';
-import { supabase } from '../utils/supabase';
 
 interface MarginAnalysisModeProps {
   project44Client: Project44APIClient | null;
@@ -231,57 +230,6 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
     }
   };
 
-  // Save analysis to database
-  const saveAnalysis = async (analysisName: string) => {
-    if (!selectedCarrierGroup || !selectedCarrier || marginAnalyses.length === 0) return;
-
-    try {
-      console.log('💾 Saving margin analysis to database...');
-      
-      const selectedGroupName = carrierGroups.find(g => g.groupCode === selectedCarrierGroup)?.groupName || selectedCarrierGroup;
-      const selectedCarrierName = groupCarriers.find(c => c.id === selectedCarrier)?.name || selectedCarrier;
-      const selectedCarrierSCAC = groupCarriers.find(c => c.id === selectedCarrier)?.scac || 'Unknown';
-      
-      // Calculate summary statistics
-      const totalCustomers = marginAnalyses.length;
-      const customersRequiringIncrease = marginAnalyses.filter(a => a.status === 'requires_increase').length;
-      const customersMaintainingMargins = marginAnalyses.filter(a => a.status === 'maintains_revenue').length;
-      const customersAllowingDecrease = marginAnalyses.filter(a => a.status === 'allows_decrease').length;
-      const customersNoQuotes = marginAnalyses.filter(a => a.status === 'no_quotes').length;
-      const totalRevenueImpact = marginAnalyses.reduce((sum, a) => sum + a.revenueImpact, 0);
-      
-      const { error } = await supabase
-        .from('margin_analyses')
-        .insert({
-          analysis_name: analysisName,
-          carrier_group_code: selectedCarrierGroup,
-          carrier_group_name: selectedGroupName,
-          selected_carrier_id: selectedCarrier,
-          selected_carrier_name: selectedCarrierName,
-          selected_carrier_scac: selectedCarrierSCAC,
-          start_date: startDate,
-          end_date: endDate,
-          analysis_results: marginAnalyses,
-          total_customers: totalCustomers,
-          customers_requiring_increase: customersRequiringIncrease,
-          customers_maintaining_margins: customersMaintainingMargins,
-          customers_allowing_decrease: customersAllowingDecrease,
-          customers_no_quotes: customersNoQuotes,
-          total_revenue_impact: totalRevenueImpact,
-          created_by: 'margin-analysis-user'
-        });
-      
-      if (error) throw error;
-      
-      console.log('✅ Margin analysis saved successfully');
-      alert('Analysis saved successfully!');
-      
-    } catch (error) {
-      console.error('❌ Failed to save margin analysis:', error);
-      alert('Failed to save analysis. Please try again.');
-    }
-  };
-  
   const runMarginAnalysis = async () => {
     if (!selectedCarrierGroup || !selectedCarrier) {
       alert('Please select both a carrier group and a specific carrier');

@@ -563,6 +563,9 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
         let totalNewCarrierCost = 0;
         let totalNewQuotes = 0;
 
+        try {
+          console.log(`🚛 Processing ${rfqs.length} RFQs for ${customerName} using carrier group ${selectedCarrierGroup} (comparing to SCAC ${selectedCarrierSCAC})`);
+          
           // Use the rfqProcessor from props for processing
           const results = await rfqProcessor.processMultipleRFQs(rfqs, {
             carrierSelection: { [selectedCarrierGroup]: true },

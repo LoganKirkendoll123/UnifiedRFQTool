@@ -28,6 +28,7 @@ import { Project44APIClient, FreshXAPIClient, CarrierGroup, Carrier } from '../u
 import { formatCurrency } from '../utils/pricingCalculator';
 import { PricingSettings, RFQRow } from '../types';
 import { supabase } from '../utils/supabase';
+import { RFQProcessor } from '../utils/rfqProcessor';
 
 interface MarginAnalysisModeProps {
   project44Client: Project44APIClient | null;

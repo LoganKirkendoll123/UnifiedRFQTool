@@ -131,19 +131,19 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
   }, []);
 
   const loadSavedAnalyses = async () => {
-    setLoadingSavedAnalyses(true);
+    if (!project44Client) {
+      console.log('⚠️ Project44 client not available for loading saved analyses');
+      return;
+    }
+
     try {
-      const { data, error } = await supabase
-        .from('margin_analyses')
-        .select('*')
-        .order('created_at', { ascending: false });
+      setLoadingSavedAnalyses(true);
+      console.log('📋 Loading saved margin analyses...');
       
-      if (error) {
-        throw error;
-      }
+      const analyses = await project44Client.getMarginAnalyses();
+      setSavedAnalyses(analyses);
       
-      setSavedAnalyses(data || []);
-      console.log(`✅ Loaded ${data?.length || 0} saved margin analyses`);
+      console.log(`✅ Loaded ${analyses.length} saved analyses`);
     } catch (error) {
       console.error('❌ Failed to load saved analyses:', error);
       setSavedAnalyses([]);
@@ -1011,9 +1011,8 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
                 <p className="font-medium mb-2">Comprehensive Analysis Process:</p>
                 <ul className="list-disc list-inside space-y-1 text-xs">
                   <li>Analyzes ALL customers in the selected date range</li>
-                <li>Filters ALL shipments to only include those with the selected carrier's SCAC</li>
-                  <li>Loads ALL shipments for each customer within the date range</li>
-                <li>Loads ALL shipments for each customer with the selected carrier's SCAC</li>
+                  <li>Filters ALL shipments to only include those with the selected carrier's SCAC</li>
+                  <li>Loads ALL shipments for each customer with the selected carrier's SCAC</li>
                   <li>Processes through Project44 API using the selected carrier group</li>
                   <li>Compares historical costs vs current market costs for each customer</li>
                   <li>Calculates required margin adjustments to maintain revenue levels</li>

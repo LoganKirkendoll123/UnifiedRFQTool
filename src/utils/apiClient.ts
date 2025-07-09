@@ -884,6 +884,74 @@ export class Project44APIClient {
     }
   }
 
+  // Margin Analysis methods
+  async saveMarginAnalysis(analysisName: string, analysisData: any): Promise<string> {
+    try {
+      console.log('💾 Saving margin analysis:', analysisName);
+      console.log('📊 Analysis data:', analysisData);
+      
+      const { data, error } = await supabase
+        .from('margin_analyses')
+        .insert({
+          analysis_name: analysisName,
+          analysis_data: analysisData,
+          created_by: 'user'
+        })
+        .select('id')
+        .single();
+
+      if (error) {
+        console.error('❌ Failed to save margin analysis:', error);
+        throw new Error(`Failed to save margin analysis: ${error.message}`);
+      }
+
+      console.log('✅ Margin analysis saved with ID:', data.id);
+      return data.id;
+    } catch (error) {
+      console.error('❌ Error saving margin analysis:', error);
+      throw error;
+    }
+  }
+
+  async getMarginAnalyses(): Promise<any[]> {
+    try {
+      const { data, error } = await supabase
+        .from('margin_analyses')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (error) {
+        console.error('❌ Failed to get margin analyses:', error);
+        throw new Error(`Failed to get margin analyses: ${error.message}`);
+      }
+
+      return data || [];
+    } catch (error) {
+      console.error('❌ Error getting margin analyses:', error);
+      throw error;
+    }
+  }
+
+  async getMarginAnalysis(analysisId: string): Promise<any> {
+    try {
+      const { data, error } = await supabase
+        .from('margin_analyses')
+        .select('*')
+        .eq('id', analysisId)
+        .single();
+
+      if (error) {
+        console.error('❌ Failed to get margin analysis:', error);
+        throw new Error(`Failed to get margin analysis: ${error.message}`);
+      }
+
+      return data;
+    } catch (error) {
+      console.error('❌ Error getting margin analysis:', error);
+      throw error;
+    }
+  }
+
   async saveRequest(
     batchId: string,
     rfq: RFQRow,

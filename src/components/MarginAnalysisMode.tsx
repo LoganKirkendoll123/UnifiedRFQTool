@@ -12,6 +12,8 @@ import {
   CheckCircle,
   Loader,
   BarChart3,
+  FileText,
+  Trash2,
   Package,
   Clock,
   Download,
@@ -69,12 +71,14 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
   const [groupCarriers, setGroupCarriers] = useState<Carrier[]>([]);
   const [selectedCarrier, setSelectedCarrier] = useState<string>('');
   const [loadingGroups, setLoadingGroups] = useState(false);
+  const [savedAnalyses, setSavedAnalyses] = useState<any[]>([]);
   const [loadingCarriers, setLoadingCarriers] = useState(false);
   
   const [marginAnalyses, setMarginAnalyses] = useState<CustomerMarginAnalysis[]>([]);
   const [loading, setLoading] = useState(false);
   const [progress, setProgress] = useState({ current: 0, total: 0, item: '' });
   const [searchTerm, setSearchTerm] = useState('');
+  const [loadingSavedAnalyses, setLoadingSavedAnalyses] = useState(false);
   const [sortBy, setSortBy] = useState<'customer' | 'revenue' | 'margin' | 'impact'>('revenue');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
   
@@ -122,6 +126,33 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
       setSelectedCarrier('');
     }
   }, [selectedCarrierGroup, project44Client]);
+
+  // Load saved analyses
+  useEffect(() => {
+    loadSavedAnalyses();
+  }, []);
+
+  const loadSavedAnalyses = async () => {
+    setLoadingSavedAnalyses(true);
+    try {
+      const { data, error } = await supabase
+        .from('margin_analyses')
+        .select('*')
+        .order('created_at', { ascending: false });
+      
+      if (error) {
+        throw error;
+      }
+      
+      setSavedAnalyses(data || []);
+      console.log(`✅ Loaded ${data?.length || 0} saved margin analyses`);
+    } catch (error) {
+      console.error('❌ Failed to load saved analyses:', error);
+      setSavedAnalyses([]);
+    } finally {
+      setLoadingSavedAnalyses(false);
+    }
+  };
 
   const loadCarrierGroups = async () => {
     if (!project44Client) return;
@@ -227,6 +258,86 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
     } catch (error) {
       console.error('❌ Failed to convert shipment to RFQ:', error);
       return null;
+    }
+  };
+
+  // Save analysis to database - simple version with just name and JSON payload
+  const saveAnalysis = async (analysisName: string) => {
+    if (marginAnalyses.length === 0) {
+      console.error('❌ Cannot save analysis - no analysis results');
+      return;
+    }
+
+    try {
+      const { error } = await supabase
+        .from('margin_analyses')
+        .insert({
+          analysis_name: analysisName,
+          carrier_group_code: selectedCarrierGroup || '',
+          carrier_group_name: selectedGroupName || '',
+          selected_carrier_id: selectedCarrier || '',
+          selected_carrier_name: selectedCarrierName || '',
+          selected_carrier_scac: groupCarriers.find(c => c.id === selectedCarrier)?.scac || '',
+          start_date: startDate,
+          end_date: endDate,
+          analysis_results: marginAnalyses, // This is the JSON payload
+          created_by: 'margin-analysis-user'
+        });
+
+      if (error) {
+        throw error;
+      }
+
+      console.log(`✅ Saved margin analysis: ${analysisName}`);
+      
+      // Reload saved analyses
+      await loadSavedAnalyses();
+      
+    } catch (error) {
+      console.error('❌ Failed to save analysis:', error);
+      alert(`Failed to save analysis: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  };
+
+  // Load saved analysis
+  const loadSavedAnalysis = async (analysis: any) => {
+    try {
+      console.log(`📋 Loading saved analysis: ${analysis.analysis_name}`);
+      
+      // Load the analysis results from the JSON payload
+      setMarginAnalyses(analysis.analysis_results || []);
+      
+      console.log(`✅ Loaded analysis with ${analysis.analysis_results?.length || 0} results`);
+    } catch (error) {
+      console.error('❌ Failed to load saved analysis:', error);
+      alert(`Failed to load analysis: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  };
+
+  // Delete saved analysis
+  const deleteSavedAnalysis = async (analysisId: string) => {
+    if (!confirm('Are you sure you want to delete this analysis?')) {
+      return;
+    }
+
+    try {
+      const { error } = await supabase
+        .from('margin_analyses')
+        .delete()
+        .eq('id', analysisId);
+
+      if (error) {
+        throw error;
+      }
+
+      console.log(`✅ Deleted margin analysis: ${analysisId}`);
+      
+      // Reload saved analyses
+      await loadSavedAnalyses();
+      
+    } catch (error) {
+      console.error('❌ Failed to delete analysis:', error);
+      alert(`Failed to delete analysis: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   };
 
@@ -993,6 +1104,48 @@ export const MarginAnalysisMode: React.FC<MarginAnalysisModeProps> = ({
           </div>
         )}
       </div>
+
+      {/* Saved Analyses */}
+      {savedAnalyses.length > 0 && (
+        <div className="bg-white rounded-lg shadow-md p-6">
+          <h3 className="text-lg font-semibold text-gray-900 mb-4">Saved Analyses</h3>
+          {loadingSavedAnalyses ? (
+            <div className="flex justify-center">
+              <Loader className="h-6 w-6 animate-spin text-blue-500" />
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {savedAnalyses.map((analysis) => (
+                <div key={analysis.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                  <div>
+                    <div className="font-medium text-gray-900">{analysis.analysis_name}</div>
+                    <div className="text-sm text-gray-500">
+                      Created {new Date(analysis.created_at).toLocaleDateString()} • 
+                      {analysis.analysis_results?.length || 0} customers analyzed
+                    </div>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <button
+                      onClick={() => loadSavedAnalysis(analysis)}
+                      className="flex items-center space-x-2 px-3 py-1 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors text-sm"
+                    >
+                      <FileText className="h-3 w-3" />
+                      <span>Load</span>
+                    </button>
+                    <button
+                      onClick={() => deleteSavedAnalysis(analysis.id)}
+                      className="flex items-center space-x-2 px-3 py-1 bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors text-sm"
+                    >
+                      <Trash2 className="h-3 w-3" />
+                      <span>Delete</span>
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Results */}
       {marginAnalyses.length > 0 && (

@@ -210,7 +210,7 @@ export const UnifiedRFQTool: React.FC<UnifiedRFQToolProps> = ({
         pallets: s['Tot Packages'] || 1,
         weight: parseInt(s['Tot Weight']?.replace(/[^\d]/g, '') || '0'),
         carrier_name: s['Booked Carrier'] || s['Quoted Carrier'],
-        quoted_rate: parseFloat(String(s.Revenue?.replace(/[^\d.]/g, '') || '0')),
+        quoted_rate: parseFloat(String(s.Revenue || '').replace(/[^\d.]/g, '') || '0'),
         shipment_date: s['Scheduled Pickup Date'] || ''
       }));
       

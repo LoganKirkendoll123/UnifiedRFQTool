@@ -10,7 +10,6 @@ import {
   loadProject44Config,
   saveFreshXApiKey,
   loadFreshXApiKey,
-  saveSelectedCarriers,
   loadSelectedCarriers,
   savePricingSettings,
   loadPricingSettings
@@ -19,11 +18,6 @@ import { clearMarginCache } from './utils/pricingCalculator';
 import { useRFQProcessor } from './hooks/useRFQProcessor';
 import { useCarrierManagement } from './hooks/useCarrierManagement';
 import { 
-  Truck, 
-  Upload, 
-  Settings, 
-  BarChart3, 
-  FileText, 
   AlertCircle,
   CheckCircle,
   Loader,

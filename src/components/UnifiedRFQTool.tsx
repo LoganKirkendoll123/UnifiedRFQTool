@@ -376,11 +376,15 @@ export const UnifiedRFQTool: React.FC<UnifiedRFQToolProps> = ({
   };
   
   const convertManualFormToRFQ = (): RFQRow => {
+    // Validate and cast commodity to correct type
+    const validatedCommodity = manualFormData.commodity && 
+      validCommodityTypes.has(manualFormData.commodity.toUpperCase()) 
+        ? manualFormData.commodity.toUpperCase() as 'ALCOHOL' | 'FOODSTUFFS' | 'FRESH_SEAFOOD' | 'FROZEN_SEAFOOD' | 'ICE_CREAM' | 'PRODUCE'
+        : undefined;
+    
     return {
       ...manualFormData,
-      commodity: manualFormData.commodity && validCommodityTypes.has(manualFormData.commodity.toUpperCase()) 
-        ? manualFormData.commodity.toUpperCase() as 'ALCOHOL' | 'FOODSTUFFS' | 'FRESH_SEAFOOD' | 'FROZEN_SEAFOOD' | 'ICE_CREAM' | 'PRODUCE'
-        : undefined,
+      commodity: validatedCommodity,
       accessorial: []
     };
   };

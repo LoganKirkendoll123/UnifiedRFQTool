@@ -384,7 +384,9 @@ export const UnifiedRFQTool: React.FC<UnifiedRFQToolProps> = ({
   const convertManualFormToRFQ = (): RFQRow => {
     return {
       ...manualFormData,
-      commodity: validateCommodity(manualFormData.commodity),
+      commodity: manualFormData.commodity && validCommodityTypes.has(manualFormData.commodity.toUpperCase()) 
+        ? manualFormData.commodity.toUpperCase() as RFQRow['commodity'] 
+        : undefined,
       accessorial: []
     };
   };

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Search, Users, Building2, CheckCircle, AlertCircle } from 'lucide-react';
-import { supabase, checkSupabaseConnection } from '../utils/supabase';
+import { supabase } from '../utils/supabase';
 
 interface CustomerSelectionProps {
   selectedCustomer: string;

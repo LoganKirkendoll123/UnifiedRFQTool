@@ -6,16 +6,13 @@ import {
   Project44OAuthConfig,
 } from './types';
 import { 
-  saveProject44Config, 
   loadProject44Config,
-  saveFreshXApiKey,
   loadFreshXApiKey,
   loadSelectedCarriers,
   savePricingSettings,
   loadPricingSettings
 } from './utils/credentialStorage';
 import { clearMarginCache } from './utils/pricingCalculator';
-import { useRFQProcessor } from './hooks/useRFQProcessor';
 import { useCarrierManagement } from './hooks/useCarrierManagement';
 import { 
   AlertCircle,
@@ -222,6 +219,8 @@ function App() {
           freshxClient={freshxClient}
           initialPricingSettings={pricingSettings}
           initialSelectedCustomer={selectedCustomer}
+          onPricingSettingsChange={handlePricingSettingsChange}
+          onCustomerChange={handleCustomerChange}
         />
 
       </main>

@@ -152,6 +152,13 @@ export const UnifiedRFQTool: React.FC<UnifiedRFQToolProps> = ({
   // Single carrier selection (for single carrier mode)
   const [selectedSingleCarrier, setSelectedSingleCarrier] = useState<string>('');
 
+  // Helper function to validate commodity type
+  const validateCommodity = (commodity: string | undefined): 'ALCOHOL' | 'FOODSTUFFS' | 'FRESH_SEAFOOD' | 'FROZEN_SEAFOOD' | 'ICE_CREAM' | 'PRODUCE' | undefined => {
+    if (!commodity) return undefined;
+    const validCommodityTypes = new Set(['ALCOHOL', 'FOODSTUFFS', 'FRESH_SEAFOOD', 'FROZEN_SEAFOOD', 'ICE_CREAM', 'PRODUCE']);
+    const upperCommodity = commodity.toUpperCase();
+    return validCommodityTypes.has(upperCommodity) ? upperCommodity as any : undefined;
+  };
   
   
   // Load historical data
@@ -376,6 +383,7 @@ export const UnifiedRFQTool: React.FC<UnifiedRFQToolProps> = ({
   const convertManualFormToRFQ = (): RFQRow => {
     return {
       ...manualFormData,
+      commodity: validateCommodity(manualFormData.commodity),
       accessorial: []
     };
   };

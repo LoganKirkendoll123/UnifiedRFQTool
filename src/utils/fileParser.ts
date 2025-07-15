@@ -26,6 +26,11 @@ const validStateAbbreviations = new Set([
   'VA', 'WA', 'WV', 'WI', 'WY', 'AS', 'DC', 'FM', 'GU', 'MH', 'MP', 'PW', 'PR', 'VI'
 ]);
 
+// Valid commodity types as defined in types.ts
+const validCommodityTypes = new Set([
+  'ALCOHOL', 'FOODSTUFFS', 'FRESH_SEAFOOD', 'FROZEN_SEAFOOD', 'ICE_CREAM', 'PRODUCE'
+]);
+
 // Project44 LTL/VLTL accessorial codes
 const PROJECT44_ACCESSORIAL_CODES = [
   'AIRPU', 'APPTPU', 'CAMPPU', 'CFSPU', 'CHRCPU', 'CLUBPU', 'CNVPU', 'CONPU', 'DOCKPU', 'EDUPU',
@@ -293,7 +298,7 @@ const parseRow = (row: any, index: number, isProject44: boolean = false): RFQRow
 
   // Add optional fields only if they have values
   if (temperature) result.temperature = temperature as any;
-  if (commodity) result.commodity = commodity as any;
+  if (commodity && validCommodityTypes.has(commodity)) result.commodity = commodity as any;
   if (isFoodGrade !== undefined) result.isFoodGrade = isFoodGrade;
   if (deliveryDate) result.deliveryDate = deliveryDate;
   if (deliveryStartTime) result.deliveryStartTime = deliveryStartTime;

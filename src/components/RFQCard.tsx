@@ -35,15 +35,6 @@ export const RFQCard: React.FC<RFQCardProps> = ({ result, onPriceUpdate }) => {
     }
   };
 
-  // Get the best quote across all carriers for this RFQ
-  const bestQuote = result.quotes.length > 0 
-    ? result.quotes.reduce((best, current) => {
-        const bestPrice = (best as any).customerPrice || (best.baseRate + best.fuelSurcharge + best.premiumsAndDiscounts);
-        const currentPrice = (current as any).customerPrice || (current.baseRate + current.fuelSurcharge + current.premiumsAndDiscounts);
-        return currentPrice < bestPrice ? current : best;
-      })
-    : null;
-
   // Group quotes by carrier for summary stats
   const carrierGroups = result.quotes.reduce((groups, quote) => {
     const carrierKey = quote.carrierCode || quote.carrier.name;

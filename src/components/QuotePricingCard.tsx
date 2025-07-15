@@ -55,14 +55,6 @@ export const QuotePricingCard: React.FC<QuotePricingCardProps> = ({
     }
   };
 
-  const getMarginTypeLabel = () => {
-    switch (quote.appliedMarginType) {
-      case 'customer': return 'Customer Margin';
-      case 'fallback': return 'Fallback Margin';
-      default: return 'Flat Margin';
-    }
-  };
-
   return (
     <div className="bg-white rounded-lg border border-gray-200 hover:border-gray-300 transition-all duration-200">
       {/* Header */}
@@ -241,7 +233,7 @@ export const QuotePricingCard: React.FC<QuotePricingCardProps> = ({
                 <div className="flex justify-between">
                   <span className="text-gray-600">Margin %:</span>
                     <span className={`font-medium ${getMarginTypeColor()}`}>
-                      {quote.appliedMarginPercentage.toFixed(1)}%
+                      {(quote.appliedMarginPercentage || 0).toFixed(1)}%
                     </span>
                   </div>
               </div>

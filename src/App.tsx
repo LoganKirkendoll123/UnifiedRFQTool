@@ -9,10 +9,8 @@ import {
   loadProject44Config,
   loadFreshXApiKey,
   loadSelectedCarriers,
-  savePricingSettings,
   loadPricingSettings
 } from './utils/credentialStorage';
-import { clearMarginCache } from './utils/pricingCalculator';
 import { useCarrierManagement } from './hooks/useCarrierManagement';
 import { 
   AlertCircle,
@@ -42,7 +40,7 @@ function App() {
     usesCustomerMargins: false,
     fallbackMarkupPercentage: 23
   });
-  const [selectedCustomer, setSelectedCustomer] = useState<string>('');
+  const [selectedCustomer] = useState<string>('');
   
   // UI state
   // API clients - store as instance variables to maintain token state

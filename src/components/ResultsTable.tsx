@@ -9,14 +9,12 @@ interface ResultsTableProps {
   results: ProcessingResult[];
   onExport: () => void;
   onPriceUpdate: (resultIndex: number, quoteId: number, newPrice: number) => void;
-  serviceType?: 'standard' | 'volume' | 'ftl';
 }
 
 export const ResultsTable: React.FC<ResultsTableProps> = ({ 
   results, 
   onExport, 
-  onPriceUpdate,
-  serviceType
+  onPriceUpdate
 }) => {
   const [expandedRows, setExpandedRows] = useState<Set<number>>(new Set());
   const [sortBy, setSortBy] = useState<'index' | 'status' | 'quotes' | 'bestPrice' | 'mode'>('index');

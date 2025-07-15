@@ -17,8 +17,6 @@ import {
   Target,
   DollarSign,
   Upload,
-  Database,
-  Sparkles,
   Save,
   FileText,
   BarChart3,

@@ -49,8 +49,6 @@ export const RFQCard: React.FC<RFQCardProps> = ({ result, onPriceUpdate }) => {
   
   // Check if this is a dual-mode result (VLTL with both Volume and Standard quotes)
   const isDualMode = (result as any).quotingDecision === 'project44-dual';
-  const hasVolumeQuotes = result.quotes.some(q => (q as any).quoteMode === 'volume');
-  const hasStandardQuotes = result.quotes.some(q => (q as any).quoteMode === 'standard');
   
   // Filter quotes based on active mode
   const getFilteredQuotes = () => {

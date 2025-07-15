@@ -24,7 +24,7 @@ import {
   History
 } from 'lucide-react';
 import { Project44APIClient, FreshXAPIClient } from '../utils/apiClient';
-import { RFQRow, PricingSettings, ProcessingResult, QuoteWithPricing, LineItemData } from '../types';
+import { RFQRow, PricingSettings, QuoteWithPricing, LineItemData } from '../types';
 import { CustomerSelection } from './CustomerSelection';
 import { CarrierSelection } from './CarrierSelection';
 import { PricingSettingsComponent } from './PricingSettings';

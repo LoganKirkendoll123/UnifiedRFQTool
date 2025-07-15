@@ -27,7 +27,7 @@ const validStateAbbreviations = new Set([
 ]);
 
 // Valid commodity types as defined in types.ts
-const validCommodityTypes = new Set([
+export const validCommodityTypes = new Set([
   'ALCOHOL', 'FOODSTUFFS', 'FRESH_SEAFOOD', 'FROZEN_SEAFOOD', 'ICE_CREAM', 'PRODUCE'
 ]);
 

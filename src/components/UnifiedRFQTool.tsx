@@ -31,6 +31,7 @@ import { PricingSettingsComponent } from './PricingSettings';
 import { ResultsTable } from './ResultsTable';
 import { FileUpload } from './FileUpload';
 import { parseCSV, parseXLSX } from '../utils/fileParser';
+import { validCommodityTypes } from '../utils/fileParser';
 import { useRFQProcessor } from '../hooks/useRFQProcessor';
 import { useCarrierManagement } from '../hooks/useCarrierManagement';
 import { supabase } from '../utils/supabase';

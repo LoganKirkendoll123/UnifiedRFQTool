@@ -151,9 +151,8 @@ export const UnifiedRFQTool: React.FC<UnifiedRFQToolProps> = ({
   
   // Single carrier selection (for single carrier mode)
   const [selectedSingleCarrier, setSelectedSingleCarrier] = useState<string>('');
+
   
-  // Customer selection for specific customer mode
-  const [specificCustomers, setSpecificCustomers] = useState<string[]>([]);
   
   // Load historical data
   useEffect(() => {

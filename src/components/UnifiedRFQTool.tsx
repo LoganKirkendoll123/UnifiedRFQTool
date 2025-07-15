@@ -183,11 +183,13 @@ export const UnifiedRFQTool: React.FC<UnifiedRFQToolProps> = ({
       }
       
       if (dateRangeFilter.start) {
-        query = query.gte('Scheduled Pickup Date', dateRangeFilter.start);
+        const startTimestamp = new Date(dateRangeFilter.start).getTime();
+        query = query.gte('Scheduled Pickup Date', startTimestamp);
       }
       
       if (dateRangeFilter.end) {
-        query = query.lte('Scheduled Pickup Date', dateRangeFilter.end);
+        const endTimestamp = new Date(dateRangeFilter.end).getTime();
+        query = query.lte('Scheduled Pickup Date', endTimestamp);
       }
       
       if (carrierFilter) {

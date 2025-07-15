@@ -92,18 +92,6 @@ function App() {
     }
   }, []);
 
-  const handlePricingSettingsChange = (settings: PricingSettings) => {
-    setPricingSettings(settings);
-    savePricingSettings(settings);
-  };
-
-  const handleCustomerChange = (customer: string) => {
-    setSelectedCustomer(customer);
-    // Clear margin cache when customer changes
-    clearMarginCache();
-    console.log(`👤 Customer changed to: ${customer || 'None'}`);
-  };
-
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50">

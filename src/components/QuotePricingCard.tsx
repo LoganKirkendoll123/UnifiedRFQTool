@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Edit3, Check, X, Truck, ChevronDown, ChevronUp, Info, DollarSign, Users, Calculator, Building2 } from 'lucide-react';
+import { Edit3, Check, X, ChevronDown, ChevronUp, DollarSign, Users, Calculator, Building2 } from 'lucide-react';
 import { QuoteWithPricing } from '../types';
 import { formatCurrency, formatProfit, formatChargeDescription } from '../utils/pricingCalculator';
 
@@ -30,8 +30,6 @@ export const QuotePricingCard: React.FC<QuotePricingCardProps> = ({
     setEditPrice(quote.customerPrice.toString());
     setIsEditing(false);
   };
-
-  const profitMargin = quote.carrierTotalRate > 0 ? (quote.profit / quote.carrierTotalRate) * 100 : 0;
 
   // Get all charges from Project44 response
   const allCharges = quote.rateQuoteDetail?.charges || [];

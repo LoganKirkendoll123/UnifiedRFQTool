@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Settings, DollarSign, Percent, Calculator, Users, Building2 } from 'lucide-react';
+import { Settings, DollarSign, Percent, Calculator, Users } from 'lucide-react';
 import { PricingSettings } from '../types';
 import { CustomerSelection } from './CustomerSelection';
 

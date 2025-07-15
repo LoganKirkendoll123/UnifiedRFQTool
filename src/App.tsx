@@ -219,8 +219,6 @@ function App() {
           freshxClient={freshxClient}
           initialPricingSettings={pricingSettings}
           initialSelectedCustomer={selectedCustomer}
-          onPricingSettingsChange={handlePricingSettingsChange}
-          onCustomerChange={handleCustomerChange}
         />
 
       </main>

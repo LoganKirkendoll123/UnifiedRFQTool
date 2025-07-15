@@ -195,7 +195,7 @@ export const UnifiedRFQTool: React.FC<UnifiedRFQToolProps> = ({
         query = query.or(`Booked Carrier.eq.${carrierFilter},Quoted Carrier.eq.${carrierFilter}`);
       }
       
-      const { data, error } = await query.order('Scheduled Pickup Date', { ascending: false }).limit(100);
+      const { data, error } = await query.order('Scheduled Pickup Date', { ascending: false });
       
       if (error) {
         console.error('Error loading historical shipments:', error);

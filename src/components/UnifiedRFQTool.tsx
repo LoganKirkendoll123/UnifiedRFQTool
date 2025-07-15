@@ -15,7 +15,6 @@ import {
   Save,
   FileText,
   RefreshCw,
-  Settings,
   Filter,
   Search,
   Calendar,

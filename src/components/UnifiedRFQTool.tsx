@@ -379,7 +379,7 @@ export const UnifiedRFQTool: React.FC<UnifiedRFQToolProps> = ({
     return {
       ...manualFormData,
       commodity: manualFormData.commodity && validCommodityTypes.has(manualFormData.commodity.toUpperCase()) 
-        ? manualFormData.commodity.toUpperCase() as RFQRow['commodity'] 
+        ? (manualFormData.commodity.toUpperCase() as 'ALCOHOL' | 'FOODSTUFFS' | 'FRESH_SEAFOOD' | 'FROZEN_SEAFOOD' | 'ICE_CREAM' | 'PRODUCE')
         : undefined,
       accessorial: []
     };

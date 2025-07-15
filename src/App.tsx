@@ -1,19 +1,8 @@
-import React, { useState, useEffect } from 'react';
-import { CarrierSelection } from './components/CarrierSelection';
-import { PricingSettingsComponent } from './components/PricingSettings';
-import { ProcessingStatus } from './components/ProcessingStatus';
-import { ResultsTable } from './components/ResultsTable';
-import { ApiKeyInput } from './components/ApiKeyInput';
-import { FileUpload } from './components/FileUpload';
-import { TemplateDownload } from './components/TemplateDownload';
+import { useState, useEffect } from 'react';
 import { UnifiedRFQTool } from './components/UnifiedRFQTool';
-import { parseCSV, parseXLSX } from './utils/fileParser';
 import { Project44APIClient, FreshXAPIClient } from './utils/apiClient';
 import { 
-  RFQRow, 
   PricingSettings,
-  ProcessingResult,
-  QuoteWithPricing,
   Project44OAuthConfig,
 } from './types';
 import { 
@@ -49,19 +38,10 @@ import {
   TrendingUp,
   Clock,
   DollarSign,
-  Award,
   Star,
-  Sparkles,
-  Building2,
-  Globe,
-  Layers
 } from 'lucide-react';
-import * as XLSX from 'xlsx';
 
 function App() {
-  // Core state
-  const [rfqData, setRfqData] = useState<RFQRow[]>([]);
-  
   // API configuration
   const [project44Config, setProject44Config] = useState<Project44OAuthConfig>({
     oauthUrl: '/api/v4/oauth2/token',
@@ -85,9 +65,6 @@ function App() {
   const [selectedCustomer, setSelectedCustomer] = useState<string>('');
   
   // UI state
-  const [activeTab, setActiveTab] = useState<'unified'>('unified');
-  const [fileError, setFileError] = useState<string>('');
-  
   // API clients - store as instance variables to maintain token state
   const [project44Client, setProject44Client] = useState<Project44APIClient | null>(null);
   const [freshxClient, setFreshxClient] = useState<FreshXAPIClient | null>(null);

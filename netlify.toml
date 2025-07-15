@@ -2,7 +2,7 @@
   publish = "dist"
   command = "npm run build"
 
-[functions]
+[[redirects]]
   from = "/api/project44/*"
   to = "/.netlify/functions/project44-proxy"
   status = 200

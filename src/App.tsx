@@ -19,17 +19,14 @@ import { useRFQProcessor } from './hooks/useRFQProcessor';
 import { useCarrierManagement } from './hooks/useCarrierManagement';
 import { 
   AlertCircle,
-  Target,
   Shield,
-  TrendingUp,
-  Clock,
   DollarSign,
   Star,
 } from 'lucide-react';
 
 function App() {
   // API configuration
-  const [project44Config, setProject44Config] = useState<Project44OAuthConfig>({
+  const [, setProject44Config] = useState<Project44OAuthConfig>({
     oauthUrl: '/api/v4/oauth2/token',
     basicUser: '',
     basicPassword: '',
@@ -37,7 +34,7 @@ function App() {
     clientSecret: '',
     ratingApiUrl: '/api/v4/ltl/quotes/rates/query'
   });
-  const [freshxApiKey, setFreshxApiKey] = useState('');
+  const [, setFreshxApiKey] = useState('');
   const [isProject44Valid, setIsProject44Valid] = useState(false);
   const [isFreshXValid, setIsFreshXValid] = useState(false);
   
@@ -57,10 +54,6 @@ function App() {
 
   // Use consolidated hooks
   const carrierManagement = useCarrierManagement({ project44Client });
-  const rfqProcessor = useRFQProcessor({ 
-    project44Client, 
-    freshxClient 
-  });
   
   // Load saved data on component mount
   useEffect(() => {
@@ -101,37 +94,6 @@ function App() {
       setPricingSettings(savedPricing);
     }
   }, []);
-
-  const handleProject44ConfigChange = (config: Project44OAuthConfig) => {
-    console.log('🔧 Project44 config updated, creating new client...');
-    setProject44Config(config);
-    saveProject44Config(config);
-    
-    // Create new client instance with updated config
-    const client = new Project44APIClient(config);
-    setProject44Client(client);
-  };
-
-  const handleProject44Validation = (isValid: boolean) => {
-    console.log('🔍 Project44 validation result:', isValid);
-    setIsProject44Valid(isValid);
-  };
-
-  const handleFreshXKeyChange = (apiKey: string) => {
-    console.log('🔧 FreshX API key updated, creating new client...');
-    setFreshxApiKey(apiKey);
-    saveFreshXApiKey(apiKey);
-    
-    // Create new client instance with updated key
-    const client = new FreshXAPIClient(apiKey);
-    setFreshxClient(client);
-  };
-
-  const handleFreshXValidation = (isValid: boolean) => {
-    console.log('🔍 FreshX validation result:', isValid);
-    setIsFreshXValid(isValid);
-  };
-
 
   const handlePricingSettingsChange = (settings: PricingSettings) => {
     setPricingSettings(settings);

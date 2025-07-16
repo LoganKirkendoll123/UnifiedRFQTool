@@ -32,7 +32,9 @@ import {
   TrendingUp,
   TrendingDown,
   Download,
-  History
+  History,
+  Award,
+  Crown
 } from 'lucide-react';
 import { Project44APIClient, FreshXAPIClient } from '../utils/apiClient';
 import { RFQRow, PricingSettings, ProcessingResult, QuoteWithPricing, LineItemData } from '../types';
@@ -58,6 +60,7 @@ interface UnifiedRFQToolProps {
 type InputSource = 'csv' | 'manual' | 'history' | 'past-rfq';
 type CarrierMode = 'single' | 'multiple';
 type CustomerMode = 'single' | 'all' | 'specific';
+type ExportMode = 'all-quotes' | 'best-only';
 
 interface ManualRFQFormData {
   fromDate: string;
@@ -110,6 +113,7 @@ export const UnifiedRFQTool: React.FC<UnifiedRFQToolProps> = ({
   const [carrierMode, setCarrierMode] = useState<CarrierMode>('multiple');
   const [customerMode, setCustomerMode] = useState<CustomerMode>('single');
   const [compareWithPastRFQ, setCompareWithPastRFQ] = useState(false);
+  const [exportMode, setExportMode] = useState<ExportMode>('all-quotes');
   
   // Data state
   const [rfqData, setRfqData] = useState<RFQRow[]>([]);
@@ -538,12 +542,52 @@ export const UnifiedRFQTool: React.FC<UnifiedRFQToolProps> = ({
   const exportResults = () => {
     if (rfqProcessor.results.length === 0) return;
 
-    const exportData = rfqProcessor.results.flatMap(result => {
-      const smartResult = result as any;
-      
-      return result.quotes.map(quote => {
-        const quoteWithPricing = quote as QuoteWithPricing;
-        const quoteWithMode = quote as any;
+    let exportData;
+
+    if (exportMode === 'best-only') {
+      // Export only the best (cheapest) quote per RFQ
+      exportData = rfqProcessor.results.map(result => {
+        const smartResult = result as any;
+        
+        if (result.quotes.length === 0) {
+          // No quotes for this RFQ
+          return {
+            'RFQ Number': result.rowIndex + 1,
+            'Routing Decision': smartResult.quotingDecision?.replace('project44-', '').toUpperCase() || 'STANDARD',
+            'Quote Type': 'N/A',
+            'Routing Reason': smartResult.quotingReason || 'Standard LTL processing',
+            'Origin ZIP': result.originalData.fromZip,
+            'Destination ZIP': result.originalData.toZip,
+            'Pallets': result.originalData.pallets,
+            'Weight (lbs)': result.originalData.grossWeight,
+            'Is Reefer': result.originalData.isReefer ? 'TRUE' : 'FALSE',
+            'Temperature': result.originalData.temperature || 'AMBIENT',
+            'Pickup Date': result.originalData.fromDate,
+            'Carrier Name': 'NO QUOTES',
+            'Carrier SCAC': '',
+            'Carrier MC': '',
+            'Service Level': '',
+            'Transit Days': '',
+            'Actual Carrier Cost': 0,
+            'Base Charge (Net)': 0,
+            'Fuel Surcharge': 0,
+            'Customer Price': 0,
+            'Profit Margin': 0,
+            'Profit %': '0%',
+            'Processing Status': result.status.toUpperCase(),
+            'Error Message': result.error || 'No quotes received'
+          };
+        }
+
+        // Find the best (cheapest) quote
+        const bestQuote = result.quotes.reduce((best, current) => {
+          const bestPrice = (best as QuoteWithPricing).customerPrice || 0;
+          const currentPrice = (current as QuoteWithPricing).customerPrice || 0;
+          return currentPrice < bestPrice ? current : best;
+        });
+
+        const quoteWithPricing = bestQuote as QuoteWithPricing;
+        const quoteWithMode = bestQuote as any;
         
         return {
           'RFQ Number': result.rowIndex + 1,
@@ -557,11 +601,11 @@ export const UnifiedRFQTool: React.FC<UnifiedRFQToolProps> = ({
           'Is Reefer': result.originalData.isReefer ? 'TRUE' : 'FALSE',
           'Temperature': result.originalData.temperature || 'AMBIENT',
           'Pickup Date': result.originalData.fromDate,
-          'Carrier Name': quote.carrier.name,
-          'Carrier SCAC': quote.carrier.scac || '',
-          'Carrier MC': quote.carrier.mcNumber || '',
-          'Service Level': quote.serviceLevel?.description || quote.serviceLevel?.code || '',
-          'Transit Days': quote.transitDays || '',
+          'Carrier Name': bestQuote.carrier.name,
+          'Carrier SCAC': bestQuote.carrier.scac || '',
+          'Carrier MC': bestQuote.carrier.mcNumber || '',
+          'Service Level': bestQuote.serviceLevel?.description || bestQuote.serviceLevel?.code || '',
+          'Transit Days': bestQuote.transitDays || '',
           'Actual Carrier Cost': quoteWithPricing.carrierTotalRate || 0,
           'Base Charge (Net)': (() => {
             const baseCharges = quoteWithPricing.chargeBreakdown?.baseCharges?.reduce((sum, charge) => sum + (charge.amount || 0), 0) || 0;
@@ -579,7 +623,51 @@ export const UnifiedRFQTool: React.FC<UnifiedRFQToolProps> = ({
           'Error Message': result.error || ''
         };
       });
-    });
+    } else {
+      // Export all quotes (current behavior)
+      exportData = rfqProcessor.results.flatMap(result => {
+        const smartResult = result as any;
+        
+        return result.quotes.map(quote => {
+          const quoteWithPricing = quote as QuoteWithPricing;
+          const quoteWithMode = quote as any;
+          
+          return {
+            'RFQ Number': result.rowIndex + 1,
+            'Routing Decision': smartResult.quotingDecision?.replace('project44-', '').toUpperCase() || 'STANDARD',
+            'Quote Type': quoteWithMode.quoteModeLabel || 'Standard LTL',
+            'Routing Reason': smartResult.quotingReason || 'Standard LTL processing',
+            'Origin ZIP': result.originalData.fromZip,
+            'Destination ZIP': result.originalData.toZip,
+            'Pallets': result.originalData.pallets,
+            'Weight (lbs)': result.originalData.grossWeight,
+            'Is Reefer': result.originalData.isReefer ? 'TRUE' : 'FALSE',
+            'Temperature': result.originalData.temperature || 'AMBIENT',
+            'Pickup Date': result.originalData.fromDate,
+            'Carrier Name': quote.carrier.name,
+            'Carrier SCAC': quote.carrier.scac || '',
+            'Carrier MC': quote.carrier.mcNumber || '',
+            'Service Level': quote.serviceLevel?.description || quote.serviceLevel?.code || '',
+            'Transit Days': quote.transitDays || '',
+            'Actual Carrier Cost': quoteWithPricing.carrierTotalRate || 0,
+            'Base Charge (Net)': (() => {
+              const baseCharges = quoteWithPricing.chargeBreakdown?.baseCharges?.reduce((sum, charge) => sum + (charge.amount || 0), 0) || 0;
+              const discounts = Math.abs(quoteWithPricing.chargeBreakdown?.discountCharges?.reduce((sum, charge) => sum + (charge.amount || 0), 0) || 0);
+              return baseCharges - discounts;
+            })(),
+            'Fuel Surcharge': (() => {
+              return quoteWithPricing.chargeBreakdown?.fuelCharges?.reduce((sum, charge) => sum + (charge.amount || 0), 0) || 0;
+            })(),
+            'Customer Price': quoteWithPricing.customerPrice || 0,
+            'Profit Margin': quoteWithPricing.profit || 0,
+            'Profit %': quoteWithPricing.carrierTotalRate > 0 ? 
+              ((quoteWithPricing.profit / quoteWithPricing.carrierTotalRate) * 100).toFixed(1) + '%' : '0%',
+            'Processing Status': result.status.toUpperCase(),
+            'Error Message': result.error || ''
+          };
+        });
+      });
+    }
 
     const ws = XLSX.utils.json_to_sheet(exportData);
     const wb = XLSX.utils.book_new();
@@ -615,7 +703,8 @@ export const UnifiedRFQTool: React.FC<UnifiedRFQToolProps> = ({
     
     ws['!cols'] = colWidths;
     
-    const fileName = `freight-quotes-${new Date().toISOString().split('T')[0]}.xlsx`;
+    const modeText = exportMode === 'best-only' ? 'best-quotes' : 'all-quotes';
+    const fileName = `freight-quotes-${modeText}-${new Date().toISOString().split('T')[0]}.xlsx`;
     XLSX.writeFile(wb, fileName);
   };
   
@@ -805,14 +894,17 @@ export const UnifiedRFQTool: React.FC<UnifiedRFQToolProps> = ({
     <div className="bg-white rounded-lg shadow-md p-6">
       <h3 className="text-lg font-semibold text-gray-900 mb-4">Upload RFQ Data</h3>
       
-      {/* Template Download Button */}
-      <div className="mb-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+      {/* Headers-Only Template Download */}
+      <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
         <div className="flex items-center justify-between">
-          <div>
-            <h4 className="text-sm font-medium text-blue-900">Need a template?</h4>
-            <p className="text-xs text-blue-700 mt-1">
-              Download a headers-only template to get started with the correct column structure
-            </p>
+          <div className="flex items-center space-x-3">
+            <FileText className="h-5 w-5 text-blue-600" />
+            <div>
+              <h4 className="text-sm font-medium text-blue-900">Need a template?</h4>
+              <p className="text-xs text-blue-700 mt-1">
+                Download a headers-only Excel template with all required columns pre-configured
+              </p>
+            </div>
           </div>
           <button
             onClick={downloadHeadersOnlyTemplate}
@@ -1686,13 +1778,65 @@ export const UnifiedRFQTool: React.FC<UnifiedRFQToolProps> = ({
               </p>
             </div>
             
-            <button
-              onClick={exportResults}
-              className="flex items-center space-x-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700"
-            >
-              <Download className="h-4 w-4" />
-              <span>Export Results</span>
-            </button>
+            <div className="flex items-center space-x-4">
+              {/* Export Mode Selection */}
+              <div className="flex items-center space-x-2">
+                <label className="text-sm font-medium text-gray-700">Export:</label>
+                <div className="flex items-center space-x-1 bg-gray-100 rounded-lg p-1">
+                  <button
+                    onClick={() => setExportMode('all-quotes')}
+                    className={`flex items-center space-x-1 px-3 py-1 text-sm rounded-md transition-colors ${
+                      exportMode === 'all-quotes' 
+                        ? 'bg-white text-blue-600 shadow-sm' 
+                        : 'text-gray-600 hover:text-gray-900'
+                    }`}
+                  >
+                    <Award className="h-3 w-3" />
+                    <span>All Quotes</span>
+                  </button>
+                  <button
+                    onClick={() => setExportMode('best-only')}
+                    className={`flex items-center space-x-1 px-3 py-1 text-sm rounded-md transition-colors ${
+                      exportMode === 'best-only' 
+                        ? 'bg-white text-green-600 shadow-sm' 
+                        : 'text-gray-600 hover:text-gray-900'
+                    }`}
+                  >
+                    <Crown className="h-3 w-3" />
+                    <span>Best Only</span>
+                  </button>
+                </div>
+              </div>
+              
+              <button
+                onClick={exportResults}
+                className="flex items-center space-x-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
+              >
+                <Download className="h-4 w-4" />
+                <span>Export Results</span>
+              </button>
+            </div>
+          </div>
+          
+          {/* Export Mode Description */}
+          <div className="mt-3 p-3 bg-gray-50 rounded-lg">
+            <div className="flex items-center space-x-2 text-gray-700">
+              {exportMode === 'all-quotes' ? (
+                <>
+                  <Award className="h-4 w-4 text-blue-600" />
+                  <span className="text-sm">
+                    <strong>All Quotes Mode:</strong> Exports every quote received for each RFQ, showing all carrier options and pricing comparisons.
+                  </span>
+                </>
+              ) : (
+                <>
+                  <Crown className="h-4 w-4 text-green-600" />
+                  <span className="text-sm">
+                    <strong>Best Only Mode:</strong> Exports only the cheapest quote for each RFQ, providing a clean summary of optimal pricing choices.
+                  </span>
+                </>
+              )}
+            </div>
           </div>
         </div>
         

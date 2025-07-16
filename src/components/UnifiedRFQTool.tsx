@@ -41,7 +41,6 @@ import { CarrierSelection } from './CarrierSelection';
 import { PricingSettingsComponent } from './PricingSettings';
 import { ResultsTable } from './ResultsTable';
 import { FileUpload } from './FileUpload';
-import { TemplateDownload } from './TemplateDownload';
 import { parseCSV, parseXLSX } from '../utils/fileParser';
 import { useRFQProcessor } from '../hooks/useRFQProcessor';
 import { useCarrierManagement } from '../hooks/useCarrierManagement';
@@ -1387,8 +1386,6 @@ export const UnifiedRFQTool: React.FC<UnifiedRFQToolProps> = ({
                   Carrier selected: {carrierManagement.carrierGroups.flatMap(g => g.carriers).find(c => c.id === selectedSingleCarrier)?.name}
                 </span>
               </div>
-              
-              <TemplateDownload isProject44={true} />
             </div>
           )}
         </div>

@@ -810,6 +810,20 @@ export const UnifiedRFQTool: React.FC<UnifiedRFQToolProps> = ({
         isProcessing={rfqProcessor.processingStatus.isProcessing}
       />
       
+      {/* Template Download Button */}
+      <div className="mt-4">
+        <button
+          onClick={() => downloadProject44ExcelTemplate()}
+          className="inline-flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+        >
+          <Download className="h-4 w-4" />
+          <span>Download Template</span>
+        </button>
+        <p className="text-xs text-gray-500 mt-1">
+          Download Excel template with examples for all 3 routing modes
+        </p>
+      </div>
+      
       {rfqData.length > 0 && (
         <div className="mt-4 p-4 bg-green-50 border border-green-200 rounded-lg">
           <div className="flex items-center space-x-2 text-green-800">
@@ -823,11 +837,6 @@ export const UnifiedRFQTool: React.FC<UnifiedRFQToolProps> = ({
           </p>
         </div>
       )}
-    </div>
-  );
-  
-  // Render manual RFQ form
-  const renderManualRFQForm = () => (
     <div className="bg-white rounded-lg shadow-md p-6">
       <h3 className="text-lg font-semibold text-gray-900 mb-4">Create Manual RFQ</h3>
       

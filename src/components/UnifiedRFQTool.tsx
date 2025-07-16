@@ -561,7 +561,15 @@ export const UnifiedRFQTool: React.FC<UnifiedRFQToolProps> = ({
           'Carrier MC': quote.carrier.mcNumber || '',
           'Service Level': quote.serviceLevel?.description || quote.serviceLevel?.code || '',
           'Transit Days': quote.transitDays || '',
-          'Carrier Rate': quoteWithPricing.carrierTotalRate || 0,
+          'Actual Carrier Cost': quoteWithPricing.carrierTotalRate || 0,
+          'Base Charge (Net)': (() => {
+            const baseCharges = quoteWithPricing.chargeBreakdown?.baseCharges?.reduce((sum, charge) => sum + (charge.amount || 0), 0) || 0;
+            const discounts = Math.abs(quoteWithPricing.chargeBreakdown?.discountCharges?.reduce((sum, charge) => sum + (charge.amount || 0), 0) || 0);
+            return baseCharges - discounts;
+          })(),
+          'Fuel Surcharge': (() => {
+            return quoteWithPricing.chargeBreakdown?.fuelCharges?.reduce((sum, charge) => sum + (charge.amount || 0), 0) || 0;
+          })(),
           'Customer Price': quoteWithPricing.customerPrice || 0,
           'Profit Margin': quoteWithPricing.profit || 0,
           'Profit %': quoteWithPricing.carrierTotalRate > 0 ? 
@@ -594,7 +602,9 @@ export const UnifiedRFQTool: React.FC<UnifiedRFQToolProps> = ({
       { wch: 12 }, // Carrier MC
       { wch: 20 }, // Service Level
       { wch: 12 }, // Transit Days
-      { wch: 15 }, // Carrier Rate
+      { wch: 15 }, // Actual Carrier Cost
+      { wch: 15 }, // Base Charge (Net)
+      { wch: 15 }, // Fuel Surcharge
       { wch: 15 }, // Customer Price
       { wch: 15 }, // Profit Margin
       { wch: 10 }, // Profit %

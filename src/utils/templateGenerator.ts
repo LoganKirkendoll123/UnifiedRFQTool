@@ -695,6 +695,218 @@ export const downloadProject44ExcelTemplate = () => {
   console.log('3-Mode Smart Routing template download initiated');
 };
 
+export const generateHeadersOnlyTemplate = (): ArrayBuffer => {
+  const workbook = XLSX.utils.book_new();
+  
+  // Create comprehensive headers - ONLY headers, no sample data
+  const baseHeaders = [
+    // Core required fields
+    'fromDate',
+    'fromZip', 
+    'toZip',
+    'pallets',
+    'grossWeight',
+    'isStackable',
+    'isReefer',
+    
+    // Enhanced shipment details
+    'temperature',
+    'commodity',
+    'isFoodGrade',
+    'freightClass',
+    'nmfcCode',
+    'nmfcSubCode',
+    'commodityDescription',
+    'commodityType',
+    'packageType',
+    'totalPackages',
+    'totalPieces',
+    'lengthUnit',
+    'weightUnit',
+    'totalValue',
+    'insuranceAmount',
+    'harmonizedCode',
+    'countryOfManufacture',
+    
+    // Hazmat information
+    'hazmat',
+    'hazmatClass',
+    'hazmatIdNumber',
+    'hazmatPackingGroup',
+    'hazmatProperShippingName',
+    'emergencyContactName',
+    'emergencyContactPhone',
+    'emergencyContactCompany',
+    
+    // Timing and delivery windows
+    'deliveryDate',
+    'deliveryStartTime',
+    'deliveryEndTime',
+    'pickupStartTime',
+    'pickupEndTime',
+    
+    // Address details
+    'originAddressLines',
+    'originCity',
+    'originState',
+    'originCountry',
+    'destinationAddressLines',
+    'destinationCity',
+    'destinationState',
+    'destinationCountry',
+    
+    // Contact information
+    'pickupContactName',
+    'pickupContactPhone',
+    'pickupContactEmail',
+    'pickupCompanyName',
+    'deliveryContactName',
+    'deliveryContactPhone',
+    'deliveryContactEmail',
+    'deliveryCompanyName',
+    
+    // API configuration
+    'preferredCurrency',
+    'paymentTerms',
+    'direction',
+    'preferredSystemOfMeasurement',
+    'allowUnacceptedAccessorials',
+    'fetchAllGuaranteed',
+    'fetchAllInsideDelivery',
+    'fetchAllServiceLevels',
+    'enableUnitConversion',
+    'fallBackToDefaultAccountGroup',
+    'apiTimeout',
+    'totalLinearFeet',
+    
+    // Multi-item support - up to 5 items with different dimensions
+    // Item 1
+    'item1_description',
+    'item1_totalWeight',
+    'item1_freightClass',
+    'item1_packageLength',
+    'item1_packageWidth',
+    'item1_packageHeight',
+    'item1_packageType',
+    'item1_totalPackages',
+    'item1_stackable',
+    'item1_nmfcItemCode',
+    'item1_totalValue',
+    
+    // Item 2
+    'item2_description',
+    'item2_totalWeight',
+    'item2_freightClass',
+    'item2_packageLength',
+    'item2_packageWidth',
+    'item2_packageHeight',
+    'item2_packageType',
+    'item2_totalPackages',
+    'item2_stackable',
+    'item2_nmfcItemCode',
+    'item2_totalValue',
+    
+    // Item 3
+    'item3_description',
+    'item3_totalWeight',
+    'item3_freightClass',
+    'item3_packageLength',
+    'item3_packageWidth',
+    'item3_packageHeight',
+    'item3_packageType',
+    'item3_totalPackages',
+    'item3_stackable',
+    'item3_nmfcItemCode',
+    'item3_totalValue',
+    
+    // Item 4
+    'item4_description',
+    'item4_totalWeight',
+    'item4_freightClass',
+    'item4_packageLength',
+    'item4_packageWidth',
+    'item4_packageHeight',
+    'item4_packageType',
+    'item4_totalPackages',
+    'item4_stackable',
+    'item4_nmfcItemCode',
+    'item4_totalValue',
+    
+    // Item 5
+    'item5_description',
+    'item5_totalWeight',
+    'item5_freightClass',
+    'item5_packageLength',
+    'item5_packageWidth',
+    'item5_packageHeight',
+    'item5_packageType',
+    'item5_totalPackages',
+    'item5_stackable',
+    'item5_nmfcItemCode',
+    'item5_totalValue'
+  ];
+  
+  // Add each Project44 accessorial as its own column
+  const accessorialHeaders = PROJECT44_ACCESSORIALS.map(acc => acc.code);
+  const allHeaders = [...baseHeaders, ...accessorialHeaders];
+  
+  // Create main worksheet with ONLY headers (no sample data)
+  const mainWsData = [allHeaders];
+  const mainWs = XLSX.utils.aoa_to_sheet(mainWsData);
+  
+  // Set column widths - base columns get normal width, item columns get medium width, accessorial columns get smaller width
+  const colWidths = [
+    // Core fields
+    { wch: 12 }, { wch: 10 }, { wch: 10 }, { wch: 8 }, { wch: 12 }, { wch: 12 }, { wch: 10 },
+    // Enhanced fields
+    { wch: 12 }, { wch: 15 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 20 }, { wch: 15 },
+    { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 10 }, { wch: 10 },
+    { wch: 12 }, { wch: 15 }, { wch: 15 }, { wch: 15 },
+    // Hazmat fields
+    { wch: 8 }, { wch: 12 }, { wch: 15 }, { wch: 15 }, { wch: 25 }, { wch: 20 }, { wch: 15 }, { wch: 20 },
+    // Timing fields
+    { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 12 },
+    // Address fields
+    { wch: 20 }, { wch: 15 }, { wch: 8 }, { wch: 8 }, { wch: 20 }, { wch: 15 }, { wch: 8 }, { wch: 8 },
+    // Contact fields
+    { wch: 20 }, { wch: 15 }, { wch: 25 }, { wch: 20 }, { wch: 20 }, { wch: 15 }, { wch: 25 }, { wch: 20 },
+    // API config fields
+    { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 15 }, { wch: 15 }, { wch: 15 }, { wch: 15 }, { wch: 15 },
+    { wch: 15 }, { wch: 15 }, { wch: 10 }, { wch: 15 },
+    // Item columns (5 items × 11 fields each = 55 columns)
+    ...Array(55).fill({ wch: 12 }),
+    // All accessorial columns get smaller width
+    ...PROJECT44_ACCESSORIALS.map(() => ({ wch: 8 }))
+  ];
+  
+  mainWs['!cols'] = colWidths;
+  
+  XLSX.utils.book_append_sheet(workbook, mainWs, 'RFQ Data');
+  
+  return XLSX.write(workbook, { type: 'array', bookType: 'xlsx' });
+};
+
+export const downloadHeadersOnlyTemplate = () => {
+  console.log('Generating headers-only template...');
+  const excelBuffer = generateHeadersOnlyTemplate();
+  const blob = new Blob([excelBuffer], { 
+    type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' 
+  });
+  const url = URL.createObjectURL(blob);
+  
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = 'rfq-headers-only-template.xlsx';
+  link.style.display = 'none';
+  
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  
+  URL.revokeObjectURL(url);
+  console.log('Headers-only template download initiated');
+};
+
 // Legacy functions for backward compatibility
 export const downloadFreshXExcelTemplate = downloadProject44ExcelTemplate;
 export const downloadFreshXTemplate = downloadProject44ExcelTemplate;

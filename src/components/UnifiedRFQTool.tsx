@@ -43,12 +43,12 @@ import { CarrierSelection } from './CarrierSelection';
 import { PricingSettingsComponent } from './PricingSettings';
 import { ResultsTable } from './ResultsTable';
 import { FileUpload } from './FileUpload';
-import { TemplateDownload } from './TemplateDownload';
-import { downloadHeadersOnlyTemplate } from '../utils/templateGenerator';
 import { parseCSV, parseXLSX } from '../utils/fileParser';
 import { useRFQProcessor } from '../hooks/useRFQProcessor';
 import { useCarrierManagement } from '../hooks/useCarrierManagement';
 import { supabase } from '../utils/supabase';
+import { TemplateDownload } from './TemplateDownload';
+import { downloadHeadersOnlyTemplate } from '../utils/templateGenerator';
 import * as XLSX from 'xlsx';
 
 interface UnifiedRFQToolProps {
@@ -540,124 +540,170 @@ export const UnifiedRFQTool: React.FC<UnifiedRFQToolProps> = ({
     }
   };
   
-  const getBestQuoteForRFQ = (result: ProcessingResult): QuoteWithPricing | null => {
-    if (result.quotes.length === 0) return null;
+  const formatCharges = (chargeBreakdown: any): string => {
+    if (!chargeBreakdown) return '';
     
-    return result.quotes.reduce((best, current) => {
-      const currentQuote = current as QuoteWithPricing;
-      const bestQuote = best as QuoteWithPricing;
-      
-      return currentQuote.customerPrice < bestQuote.customerPrice ? currentQuote : bestQuote;
+    const allCharges: string[] = [];
+    
+    // Collect all charge types
+    const chargeTypes = ['baseCharges', 'fuelCharges', 'accessorialCharges', 'discountCharges', 'premiumCharges', 'otherCharges'];
+    
+    chargeTypes.forEach(chargeType => {
+      const charges = chargeBreakdown[chargeType];
+      if (charges && Array.isArray(charges)) {
+        charges.forEach(charge => {
+          if (charge.amount !== undefined && charge.amount !== 0) {
+            const description = charge.description || charge.code || 'Unknown Charge';
+            const amount = charge.amount || 0;
+            allCharges.push(`${description}: $${amount.toFixed(2)}`);
+          }
+        });
+      }
     });
+    
+    return allCharges.join('; ');
   };
   
   const exportResults = () => {
     if (rfqProcessor.results.length === 0) return;
 
-    let quotesToExport: { result: ProcessingResult; quote: QuoteWithPricing; }[] = [];
-    
+    let exportData: any[] = [];
+
     if (exportMode === 'best-only') {
-      // Export only the best quote for each RFQ
-      rfqProcessor.results.forEach(result => {
-        const bestQuote = getBestQuoteForRFQ(result);
-        if (bestQuote) {
-          quotesToExport.push({ result, quote: bestQuote });
-        } else {
-          // Create a dummy entry for RFQs with no quotes
-          quotesToExport.push({
-            result,
-            quote: {
-              quoteId: 0,
-              baseRate: 0,
-              fuelSurcharge: 0,
-              accessorial: [],
-              premiumsAndDiscounts: 0,
-              readyByDate: '',
-              estimatedDeliveryDate: '',
-              weight: result.originalData.grossWeight,
-              pallets: result.originalData.pallets,
-              stackable: result.originalData.isStackable,
-              pickup: {
-                city: '',
-                state: '',
-                zip: result.originalData.fromZip
-              },
-              dropoff: {
-                city: '',
-                state: '',
-                zip: result.originalData.toZip
-              },
-              submittedBy: 'No Quotes',
-              submissionDatetime: '',
-              carrier: {
-                name: 'NO QUOTES',
-                mcNumber: '',
-                logo: '',
-                scac: '',
-                dotNumber: ''
-              },
-              carrierTotalRate: 0,
-              customerPrice: 0,
-              profit: 0,
-              markupApplied: 0,
-              isCustomPrice: false,
-              chargeBreakdown: {
-                baseCharges: [],
-                fuelCharges: [],
-                accessorialCharges: [],
-                discountCharges: [],
-                premiumCharges: [],
-                otherCharges: []
-              }
-            } as QuoteWithPricing
-          });
+      // Export only the best quote per RFQ
+      exportData = rfqProcessor.results.map(result => {
+        const smartResult = result as any;
+        
+        if (result.quotes.length === 0) {
+          // No quotes case
+          return {
+            'RFQ Number': result.rowIndex + 1,
+            'Routing Decision': smartResult.quotingDecision?.replace('project44-', '').toUpperCase() || 'STANDARD',
+            'Quote Type': 'N/A',
+            'Routing Reason': smartResult.quotingReason || 'Standard LTL processing',
+            'Origin ZIP': result.originalData.fromZip,
+            'Destination ZIP': result.originalData.toZip,
+            'Pallets': result.originalData.pallets,
+            'Weight (lbs)': result.originalData.grossWeight,
+            'Is Reefer': result.originalData.isReefer ? 'TRUE' : 'FALSE',
+            'Temperature': result.originalData.temperature || 'AMBIENT',
+            'Pickup Date': result.originalData.fromDate,
+            'Carrier Name': 'NO QUOTES',
+            'Carrier SCAC': '',
+            'Carrier MC': '',
+            'Service Level': '',
+            'Transit Days': '',
+            'Actual Carrier Cost': 0,
+            'Charge Breakdown': '',
+            'Customer Price': 0,
+            'Profit Margin': 0,
+            'Profit %': '0%',
+            'Processing Status': result.status.toUpperCase(),
+            'Error Message': result.error || 'No quotes received'
+          };
         }
+        
+        // Find the best quote (lowest customer price)
+        const bestQuote = result.quotes.reduce((best, current) => 
+          (current as QuoteWithPricing).customerPrice < (best as QuoteWithPricing).customerPrice ? current : best
+        );
+        
+        const quoteWithPricing = bestQuote as QuoteWithPricing;
+        const quoteWithMode = bestQuote as any;
+        
+        return {
+          'RFQ Number': result.rowIndex + 1,
+          'Routing Decision': smartResult.quotingDecision?.replace('project44-', '').toUpperCase() || 'STANDARD',
+          'Quote Type': quoteWithMode.quoteModeLabel || 'Standard LTL',
+          'Routing Reason': smartResult.quotingReason || 'Standard LTL processing',
+          'Origin ZIP': result.originalData.fromZip,
+          'Destination ZIP': result.originalData.toZip,
+          'Pallets': result.originalData.pallets,
+          'Weight (lbs)': result.originalData.grossWeight,
+          'Is Reefer': result.originalData.isReefer ? 'TRUE' : 'FALSE',
+          'Temperature': result.originalData.temperature || 'AMBIENT',
+          'Pickup Date': result.originalData.fromDate,
+          'Carrier Name': bestQuote.carrier.name,
+          'Carrier SCAC': bestQuote.carrier.scac || '',
+          'Carrier MC': bestQuote.carrier.mcNumber || '',
+          'Service Level': bestQuote.serviceLevel?.description || bestQuote.serviceLevel?.code || '',
+          'Transit Days': bestQuote.transitDays || '',
+          'Actual Carrier Cost': quoteWithPricing.carrierTotalRate || 0,
+          'Charge Breakdown': formatCharges(quoteWithPricing.chargeBreakdown),
+          'Customer Price': quoteWithPricing.customerPrice || 0,
+          'Profit Margin': quoteWithPricing.profit || 0,
+          'Profit %': quoteWithPricing.carrierTotalRate > 0 ? 
+            ((quoteWithPricing.profit / quoteWithPricing.carrierTotalRate) * 100).toFixed(1) + '%' : '0%',
+          'Processing Status': result.status.toUpperCase(),
+          'Error Message': result.error || ''
+        };
       });
     } else {
       // Export all quotes (existing behavior)
-      quotesToExport = rfqProcessor.results.flatMap(result => 
-        result.quotes.map(quote => ({ result, quote: quote as QuoteWithPricing }))
-      );
+      exportData = rfqProcessor.results.flatMap(result => {
+        const smartResult = result as any;
+        
+        if (result.quotes.length === 0) {
+          return [{
+            'RFQ Number': result.rowIndex + 1,
+            'Routing Decision': smartResult.quotingDecision?.replace('project44-', '').toUpperCase() || 'STANDARD',
+            'Quote Type': 'N/A',
+            'Routing Reason': smartResult.quotingReason || 'Standard LTL processing',
+            'Origin ZIP': result.originalData.fromZip,
+            'Destination ZIP': result.originalData.toZip,
+            'Pallets': result.originalData.pallets,
+            'Weight (lbs)': result.originalData.grossWeight,
+            'Is Reefer': result.originalData.isReefer ? 'TRUE' : 'FALSE',
+            'Temperature': result.originalData.temperature || 'AMBIENT',
+            'Pickup Date': result.originalData.fromDate,
+            'Carrier Name': 'NO QUOTES',
+            'Carrier SCAC': '',
+            'Carrier MC': '',
+            'Service Level': '',
+            'Transit Days': '',
+            'Actual Carrier Cost': 0,
+            'Charge Breakdown': '',
+            'Customer Price': 0,
+            'Profit Margin': 0,
+            'Profit %': '0%',
+            'Processing Status': result.status.toUpperCase(),
+            'Error Message': result.error || 'No quotes received'
+          }];
+        }
+        
+        return result.quotes.map(quote => {
+          const quoteWithPricing = quote as QuoteWithPricing;
+          const quoteWithMode = quote as any;
+          
+          return {
+            'RFQ Number': result.rowIndex + 1,
+            'Routing Decision': smartResult.quotingDecision?.replace('project44-', '').toUpperCase() || 'STANDARD',
+            'Quote Type': quoteWithMode.quoteModeLabel || 'Standard LTL',
+            'Routing Reason': smartResult.quotingReason || 'Standard LTL processing',
+            'Origin ZIP': result.originalData.fromZip,
+            'Destination ZIP': result.originalData.toZip,
+            'Pallets': result.originalData.pallets,
+            'Weight (lbs)': result.originalData.grossWeight,
+            'Is Reefer': result.originalData.isReefer ? 'TRUE' : 'FALSE',
+            'Temperature': result.originalData.temperature || 'AMBIENT',
+            'Pickup Date': result.originalData.fromDate,
+            'Carrier Name': quote.carrier.name,
+            'Carrier SCAC': quote.carrier.scac || '',
+            'Carrier MC': quote.carrier.mcNumber || '',
+            'Service Level': quote.serviceLevel?.description || quote.serviceLevel?.code || '',
+            'Transit Days': quote.transitDays || '',
+            'Actual Carrier Cost': quoteWithPricing.carrierTotalRate || 0,
+            'Charge Breakdown': formatCharges(quoteWithPricing.chargeBreakdown),
+            'Customer Price': quoteWithPricing.customerPrice || 0,
+            'Profit Margin': quoteWithPricing.profit || 0,
+            'Profit %': quoteWithPricing.carrierTotalRate > 0 ? 
+              ((quoteWithPricing.profit / quoteWithPricing.carrierTotalRate) * 100).toFixed(1) + '%' : '0%',
+            'Processing Status': result.status.toUpperCase(),
+            'Error Message': result.error || ''
+          };
+        });
+      });
     }
-
-    const exportData = quotesToExport.map(({ result, quote }) => {
-      const smartResult = result as any;
-      const quoteWithMode = quote as any;
-      
-      // Calculate fuel surcharge from charge breakdown
-      const fuelSurcharge = quote.chargeBreakdown?.fuelCharges?.reduce((sum, charge) => sum + (charge.amount || 0), 0) || 0;
-      
-      // Calculate base charge as: Actual Carrier Cost - Fuel Surcharge  
-      const baseCharge = quote.carrierTotalRate - fuelSurcharge;
-      
-      return {
-        'RFQ Number': result.rowIndex + 1,
-        'Routing Decision': smartResult.quotingDecision?.replace('project44-', '').toUpperCase() || 'STANDARD',
-        'Quote Type': quoteWithMode.quoteModeLabel || 'Standard LTL',
-        'Routing Reason': smartResult.quotingReason || 'Standard LTL processing',
-        'Origin ZIP': result.originalData.fromZip,
-        'Destination ZIP': result.originalData.toZip,
-        'Pallets': result.originalData.pallets,
-        'Weight (lbs)': result.originalData.grossWeight,
-        'Is Reefer': result.originalData.isReefer ? 'TRUE' : 'FALSE',
-        'Temperature': result.originalData.temperature || 'AMBIENT',
-        'Pickup Date': result.originalData.fromDate,
-        'Carrier Name': quote.carrier.name,
-        'Carrier SCAC': quote.carrier.scac || '',
-        'Carrier MC': quote.carrier.mcNumber || '',
-        'Service Level': quote.serviceLevel?.description || quote.serviceLevel?.code || '',
-        'Transit Days': quote.transitDays || '',
-        'Actual Carrier Cost': quote.carrierTotalRate || 0,
-        'Base Charge (Net)': baseCharge,
-        'Fuel Surcharge': fuelSurcharge,
-        'Customer Price': quote.customerPrice || 0,
-        'Profit Margin': quote.profit || 0,
-        'Profit %': quote.carrierTotalRate > 0 ? 
-          ((quote.profit / quote.carrierTotalRate) * 100).toFixed(1) + '%' : '0%',
-        'Processing Status': result.status.toUpperCase(),
-        'Error Message': result.error || ''
-      };
-    });
 
     const ws = XLSX.utils.json_to_sheet(exportData);
     const wb = XLSX.utils.book_new();
@@ -682,8 +728,7 @@ export const UnifiedRFQTool: React.FC<UnifiedRFQToolProps> = ({
       { wch: 20 }, // Service Level
       { wch: 12 }, // Transit Days
       { wch: 15 }, // Actual Carrier Cost
-      { wch: 15 }, // Base Charge (Net)
-      { wch: 15 }, // Fuel Surcharge
+      { wch: 50 }, // Charge Breakdown (wider for all charges)
       { wch: 15 }, // Customer Price
       { wch: 15 }, // Profit Margin
       { wch: 10 }, // Profit %
@@ -884,13 +929,13 @@ export const UnifiedRFQTool: React.FC<UnifiedRFQToolProps> = ({
     <div className="bg-white rounded-lg shadow-md p-6">
       <h3 className="text-lg font-semibold text-gray-900 mb-4">Upload RFQ Data</h3>
       
-      {/* Headers-only template download */}
+      {/* Headers Only Template Download */}
       <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
         <div className="flex items-center justify-between">
           <div>
-            <h4 className="text-sm font-medium text-blue-900 mb-1">Need a Template?</h4>
-            <p className="text-sm text-blue-700">
-              Download our headers-only template to get started with the correct column structure for RFQ data upload.
+            <h4 className="text-sm font-medium text-blue-900">Need a blank template?</h4>
+            <p className="text-xs text-blue-700 mt-1">
+              Download a headers-only template with all required columns for manual data entry
             </p>
           </div>
           <button
@@ -898,9 +943,14 @@ export const UnifiedRFQTool: React.FC<UnifiedRFQToolProps> = ({
             className="flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
           >
             <Download className="h-4 w-4" />
-            <span>Headers Template</span>
+            <span>Download Headers Template</span>
           </button>
         </div>
+      </div>
+      
+      {/* Template Download */}
+      <div className="mb-6">
+        <TemplateDownload isProject44={true} />
       </div>
       
       <FileUpload
@@ -922,11 +972,6 @@ export const UnifiedRFQTool: React.FC<UnifiedRFQToolProps> = ({
           </p>
         </div>
       )}
-      
-      {/* Template download section */}
-      <div className="mt-6">
-        <TemplateDownload isProject44={true} />
-      </div>
     </div>
   );
   
@@ -1539,60 +1584,6 @@ export const UnifiedRFQTool: React.FC<UnifiedRFQToolProps> = ({
           
           <CustomerSelection
             selectedCustomer={selectedCustomer}
-            onBatchSettingsLoad={(customer, carriers, batchPricingSettings) => {
-              console.log('🔄 Loading batch settings into UI:', { 
-                customer, 
-                carriers: Object.keys(carriers).length, 
-                batchPricingSettings 
-              });
-              
-              // Auto-load customer
-              setSelectedCustomer(customer);
-              
-              // Auto-load carriers  
-              carrierManagement.setSelectedCarriers(carriers);
-              
-              // Auto-load pricing settings
-              setPricingSettings(batchPricingSettings);
-              
-              // Save the loaded settings to localStorage
-              if (Object.keys(carriers).length > 0) {
-                saveSelectedCarriers(carriers);
-                console.log(`✅ Auto-loaded ${Object.keys(carriers).length} carriers`);
-              }
-              savePricingSettings(batchPricingSettings);
-              
-              if (customer) {
-                console.log(`✅ Auto-loaded customer: ${customer}`);
-              }
-              
-              console.log(`✅ Auto-loaded pricing settings for batch reprocessing`);
-            }}
-            onBatchSettingsLoad={(customer, carriers, batchPricingSettings) => {
-              console.log('🔄 Loading batch settings into UI:', { customer, carriers: Object.keys(carriers).length, batchPricingSettings });
-              
-              // Auto-load customer
-              setSelectedCustomer(customer);
-              
-              // Auto-load carriers
-              carrierManagement.setSelectedCarriers(carriers);
-              
-              // Auto-load pricing settings
-              setPricingSettings(batchPricingSettings);
-              
-              // Save the loaded settings
-              if (customer) {
-                console.log(`✅ Auto-loaded customer: ${customer}`);
-              }
-              if (Object.keys(carriers).length > 0) {
-                console.log(`✅ Auto-loaded ${Object.keys(carriers).length} carriers`);
-                saveSelectedCarriers(carriers);
-              }
-              savePricingSettings(batchPricingSettings);
-              
-              // Show confirmation to user
-              alert(`Loaded batch settings:\n• Customer: ${customer || 'None'}\n• Carriers: ${Object.keys(carriers).length} selected\n• Pricing settings: Updated`);
-            }}
             onCustomerChange={updateSelectedCustomer}
           />
         </div>
@@ -1646,29 +1637,6 @@ export const UnifiedRFQTool: React.FC<UnifiedRFQToolProps> = ({
                   The system will analyze all customers in the database and apply appropriate margins
                 </p>
               </div>
-              
-              {rfqProcessor.results.length > 0 && (
-                <button
-                  onClick={handleSaveResults}
-                  disabled={isSaving}
-                  className={`flex items-center space-x-2 px-4 py-2 rounded-lg font-medium transition-colors ${
-                    saveSuccess 
-                      ? 'bg-green-600 text-white' 
-                      : 'bg-blue-600 text-white hover:bg-blue-700'
-                  } ${isSaving ? 'opacity-50 cursor-not-allowed' : ''}`}
-                >
-                  {isSaving ? (
-                    <Loader className="h-4 w-4 animate-spin" />
-                  ) : saveSuccess ? (
-                    <CheckCircle className="h-4 w-4" />
-                  ) : (
-                    <Save className="h-4 w-4" />
-                  )}
-                  <span>
-                    {isSaving ? 'Saving...' : saveSuccess ? 'Saved!' : 'Save Results'}
-                  </span>
-                </button>
-              )}
             </div>
           </div>
         </div>
@@ -1772,13 +1740,13 @@ export const UnifiedRFQTool: React.FC<UnifiedRFQToolProps> = ({
             
             <div className="flex items-center space-x-4">
               {/* Export Mode Toggle */}
-              <div className="flex items-center space-x-2 bg-gray-100 rounded-lg p-1">
+              <div className="flex items-center space-x-2">
                 <button
                   onClick={() => setExportMode('all-quotes')}
-                  className={`flex items-center space-x-2 px-3 py-2 rounded-md text-sm font-medium transition-colors ${
+                  className={`flex items-center space-x-2 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
                     exportMode === 'all-quotes'
-                      ? 'bg-blue-600 text-white shadow-sm'
-                      : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
+                      ? 'bg-blue-600 text-white'
+                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
                   }`}
                 >
                   <Award className="h-4 w-4" />
@@ -1786,10 +1754,10 @@ export const UnifiedRFQTool: React.FC<UnifiedRFQToolProps> = ({
                 </button>
                 <button
                   onClick={() => setExportMode('best-only')}
-                  className={`flex items-center space-x-2 px-3 py-2 rounded-md text-sm font-medium transition-colors ${
+                  className={`flex items-center space-x-2 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
                     exportMode === 'best-only'
-                      ? 'bg-green-600 text-white shadow-sm'
-                      : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
+                      ? 'bg-green-600 text-white'
+                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
                   }`}
                 >
                   <Crown className="h-4 w-4" />
@@ -1807,11 +1775,10 @@ export const UnifiedRFQTool: React.FC<UnifiedRFQToolProps> = ({
             </div>
           </div>
           
-          {/* Export mode description */}
-          <div className="mt-3 text-sm text-gray-500">
+          <div className="mt-2 text-xs text-gray-500">
             {exportMode === 'all-quotes' 
-              ? 'Export all quotes received for every RFQ'
-              : 'Export only the cheapest quote for each RFQ'
+              ? 'Export will include every quote received for all RFQs'
+              : 'Export will include only the cheapest quote per RFQ'
             }
           </div>
         </div>

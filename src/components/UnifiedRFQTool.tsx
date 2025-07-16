@@ -45,6 +45,7 @@ import { parseCSV, parseXLSX } from '../utils/fileParser';
 import { useRFQProcessor } from '../hooks/useRFQProcessor';
 import { useCarrierManagement } from '../hooks/useCarrierManagement';
 import { supabase } from '../utils/supabase';
+import { downloadHeadersOnlyTemplate } from '../utils/templateGenerator';
 import * as XLSX from 'xlsx';
 
 interface UnifiedRFQToolProps {
@@ -803,6 +804,25 @@ export const UnifiedRFQTool: React.FC<UnifiedRFQToolProps> = ({
   const renderCSVUpload = () => (
     <div className="bg-white rounded-lg shadow-md p-6">
       <h3 className="text-lg font-semibold text-gray-900 mb-4">Upload RFQ Data</h3>
+      
+      {/* Template Download Button */}
+      <div className="mb-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+        <div className="flex items-center justify-between">
+          <div>
+            <h4 className="text-sm font-medium text-blue-900">Need a template?</h4>
+            <p className="text-xs text-blue-700 mt-1">
+              Download a headers-only template to get started with the correct column structure
+            </p>
+          </div>
+          <button
+            onClick={downloadHeadersOnlyTemplate}
+            className="flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+          >
+            <Download className="h-4 w-4" />
+            <span>Download Template</span>
+          </button>
+        </div>
+      </div>
       
       <FileUpload
         onFileSelect={handleFileSelect}

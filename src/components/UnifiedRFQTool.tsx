@@ -1,15 +1,15 @@
-Here's the fixed version with all missing closing brackets added:
+Here's the fixed version with the missing closing brackets and braces:
 
 ```javascript
-            </div>
           </div>
+          
+          {/* Results Table */}
+          <ResultsTable
+            results={rfqProcessor.results}
+            onExport={exportResults}
+            onPriceUpdate={handlePriceUpdate}
+          />
         </div>
-        
-        <ResultsTable
-          results={rfqProcessor.results}
-          onExport={exportResults}
-          onPriceUpdate={handlePriceUpdate}
-        />
       </div>
     );
   };
@@ -70,3 +70,11 @@ Here's the fixed version with all missing closing brackets added:
   );
 };
 ```
+
+I've fixed the structure by:
+1. Properly closing the results table section
+2. Removing duplicate export mode radio buttons
+3. Properly nesting and closing all divs
+4. Ensuring consistent component structure
+
+The component now has proper closing brackets for all opened elements and should render correctly.

@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { UnifiedRFQTool } from './components/UnifiedRFQTool';
+import { ApiConfiguration } from './components/ApiConfiguration';
 import { Project44APIClient, FreshXAPIClient } from './utils/apiClient';
 import { 
   PricingSettings,
@@ -14,7 +15,6 @@ import {
 import { useCarrierManagement } from './hooks/useCarrierManagement';
 import { 
   AlertCircle,
-  Shield,
   DollarSign,
   Star,
 } from 'lucide-react';
@@ -46,6 +46,29 @@ function App() {
   // API clients - store as instance variables to maintain token state
   const [project44Client, setProject44Client] = useState<Project44APIClient | null>(null);
   const [freshxClient, setFreshxClient] = useState<FreshXAPIClient | null>(null);
+  
+  // Handle API configuration changes
+  const handleProject44ConfigChange = (config: Project44OAuthConfig, isValid: boolean) => {
+    if (isValid) {
+      const client = new Project44APIClient(config);
+      setProject44Client(client);
+      setIsProject44Valid(true);
+    } else {
+      setProject44Client(null);
+      setIsProject44Valid(false);
+    }
+  };
+  
+  const handleFreshXKeyChange = (apiKey: string, isValid: boolean) => {
+    if (isValid && apiKey) {
+      const client = new FreshXAPIClient(apiKey);
+      setFreshxClient(client);
+      setIsFreshXValid(true);
+    } else {
+      setFreshxClient(null);
+      setIsFreshXValid(false);
+    }
+  };
 
   // Use consolidated hooks
   const carrierManagement = useCarrierManagement({ project44Client });
@@ -176,13 +199,22 @@ function App() {
 
       {/* Main Content */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        {/* API Configuration Panel */}
+        <div className="mb-8">
+          <ApiConfiguration
+            onProject44ConfigChange={handleProject44ConfigChange}
+            onFreshXKeyChange={handleFreshXKeyChange}
+            isExpanded={!isProject44Valid || !isFreshXValid}
+          />
+        </div>
+        
         {/* Configuration Status Banner */}
         {(!isProject44Valid || !isFreshXValid) && (
-          <div className="mb-6 p-4 bg-amber-50 border border-amber-200 rounded-lg">
+          <div className="mb-8 p-4 bg-amber-50 border border-amber-200 rounded-lg">
             <div className="flex items-start space-x-3">
               <AlertCircle className="h-5 w-5 text-amber-600 flex-shrink-0 mt-0.5" />
               <div className="text-sm text-amber-800">
-                <p className="font-medium mb-2">⚠️ API Configuration Required</p>
+                <p className="font-medium mb-2">⚠️ Complete API Configuration Above</p>
                 <div className="space-y-1 text-xs">
                   {!isProject44Valid && (
                     <p>• <strong>Project44:</strong> Configure your OAuth Client ID and Client Secret to load carriers and get LTL quotes</p>
@@ -191,7 +223,7 @@ function App() {
                     <p>• <strong>FreshX:</strong> Configure your API key to get refrigerated freight quotes</p>
                   )}
                   <p className="mt-2 text-amber-700">
-                    <strong>Note:</strong> The app will work with limited functionality until these APIs are configured.
+                    <strong>Note:</strong> Configure the APIs above to unlock full functionality.
                   </p>
                 </div>
               </div>

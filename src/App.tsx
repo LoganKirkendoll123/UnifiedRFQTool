@@ -16,6 +16,7 @@ import { useCarrierManagement } from './hooks/useCarrierManagement';
 import { 
   AlertCircle,
   DollarSign,
+  Shield,
   Star,
 } from 'lucide-react';
 

@@ -89,10 +89,8 @@ export const useCarrierManagement = ({ project44Client }: UseCarrierManagementOp
 
   // Initialize carriers when client becomes available
   useEffect(() => {
-    if (project44Client && !carriersLoaded && !isLoadingCarriers) {
-      loadCarriers();
-    }
-  }, [project44Client, carriersLoaded, isLoadingCarriers, loadCarriers]);
+    // Remove automatic loading on client change - now controlled manually
+  }, []);
 
   return {
     carrierGroups,

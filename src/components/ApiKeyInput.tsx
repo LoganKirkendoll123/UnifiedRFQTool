@@ -167,6 +167,9 @@ export const ApiKeyInput: React.FC<ApiKeyInputProps> = ({
           setDetailedError('');
           onValidation?.(true);
           onOAuthConfigChange?.(oauthConfig);
+          
+          // Trigger a custom event to notify that API was successfully tested
+          window.dispatchEvent(new CustomEvent('project44ApiTested', { detail: { success: true } }));
         } else {
           setValidationStatus('invalid');
           setValidationMessage('OAuth response missing access token');

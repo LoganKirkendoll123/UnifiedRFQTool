@@ -54,9 +54,17 @@ function App() {
       const client = new Project44APIClient(config);
       setProject44Client(client);
       setIsProject44Valid(true);
+      
+      // Auto-load carriers when valid configuration is provided
+      setTimeout(() => {
+        carrierManagement.loadCarriers();
+      }, 500); // Small delay to ensure client is fully initialized
     } else {
       setProject44Client(null);
       setIsProject44Valid(false);
+      
+      // Clear carriers when configuration becomes invalid
+      carrierManagement.setSelectedCarriers({});
     }
   };
   
@@ -87,6 +95,11 @@ function App() {
       const client = new Project44APIClient(savedProject44Config);
       setProject44Client(client);
       setIsProject44Valid(true);
+      
+      // Auto-load carriers for saved valid configuration
+      setTimeout(() => {
+        carrierManagement.loadCarriers();
+      }, 1000); // Delay to ensure client is ready
     }
     
     // Load FreshX API key
@@ -114,6 +127,23 @@ function App() {
     }
   }, []);
 
+  // Listen for API test events to reload carriers
+  useEffect(() => {
+    const handleApiTested = (event: CustomEvent) => {
+      if (event.detail.success && project44Client) {
+        console.log('🔄 API test successful, reloading carriers...');
+        setTimeout(() => {
+          carrierManagement.loadCarriers();
+        }, 500);
+      }
+    };
+
+    window.addEventListener('project44ApiTested', handleApiTested as EventListener);
+    
+    return () => {
+      window.removeEventListener('project44ApiTested', handleApiTested as EventListener);
+    };
+  }, [project44Client, carrierManagement]);
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50">

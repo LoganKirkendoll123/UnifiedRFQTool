@@ -367,6 +367,9 @@ export const ResultsTable: React.FC<ResultsTableProps> = ({
                 </div>
               </th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                Itemized Charges
+              </th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                 {results.length > 0 && results[0].quotes.length > 0 && hasCustomerPrice(results[0].quotes[0]) ? 'Competitive Analysis' : 'Carrier'}
               </th>
               <th className="w-12"></th>

@@ -514,6 +514,39 @@ export const UnifiedRFQTool: React.FC<UnifiedRFQToolProps> = ({
   const exportResults = () => {
     if (rfqProcessor.results.length === 0) return;
 
+    // Helper function to format itemized charges
+    const formatItemizedCharges = (quote: QuoteWithPricing): string => {
+      const charges: string[] = [];
+      
+      // Add charges from each category
+      if (quote.chargeBreakdown) {
+        const { baseCharges, fuelCharges, accessorialCharges, discountCharges, premiumCharges, otherCharges } = quote.chargeBreakdown;
+        
+        // Combine all charge arrays
+        const allCharges = [
+          ...baseCharges,
+          ...fuelCharges, 
+          ...accessorialCharges,
+          ...discountCharges,
+          ...premiumCharges,
+          ...otherCharges
+        ];
+        
+        // Format each charge as ChargeName/ChargeValue
+        allCharges.forEach(charge => {
+          const chargeName = charge.description || charge.code || 'Unknown Charge';
+          const chargeValue = Math.round(charge.amount || 0);
+          charges.push(`${chargeName}/${chargeValue}`);
+        });
+      }
+      
+      // If no detailed charges, show carrier total
+      if (charges.length === 0) {
+        charges.push(`Total Carrier Rate/${Math.round(quote.carrierTotalRate || 0)}`);
+      }
+      
+      return charges.join(';');
+    };
     const exportData = rfqProcessor.results.flatMap(result => {
       const smartResult = result as any;
       
@@ -543,6 +576,7 @@ export const UnifiedRFQTool: React.FC<UnifiedRFQToolProps> = ({
           'Profit Margin': quoteWithPricing.profit || 0,
           'Profit %': quoteWithPricing.carrierTotalRate > 0 ? 
             ((quoteWithPricing.profit / quoteWithPricing.carrierTotalRate) * 100).toFixed(1) + '%' : '0%',
+          'Itemized Charges': formatItemizedCharges(quoteWithPricing),
           'Processing Status': result.status.toUpperCase(),
           'Error Message': result.error || ''
         };

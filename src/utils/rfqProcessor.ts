@@ -146,21 +146,22 @@ export class RFQProcessor {
 
     const allResults: SmartQuotingResult[] = [];
 
-    for (let i = 0; i < rfqs.length; i++) {
-      const rfq = rfqs[i];
-      
-      // Update progress
+    // Process all RFQs asynchronously for better performance
+    console.log(`🚀 Processing ${rfqs.length} RFQs in parallel for maximum speed`);
+    
+    const processingPromises = rfqs.map(async (rfq, index) => {
+      // Update progress for this specific RFQ
       if (options.onProgress) {
         const classification = this.classifyShipment(rfq);
-        options.onProgress(i + 1, rfqs.length, `RFQ ${i + 1}: ${classification.quoting.toUpperCase()}`);
+        options.onProgress(index + 1, rfqs.length, `RFQ ${index + 1}: ${classification.quoting.toUpperCase()}`);
       }
-
-      const result = await this.processSingleRFQ(rfq, options, i);
-      allResults.push(result);
-
-      // Small delay between requests
-      await new Promise(resolve => setTimeout(resolve, 100));
-    }
+      
+      return await this.processSingleRFQ(rfq, options, index);
+    });
+    
+    // Wait for all RFQs to complete
+    const results = await Promise.all(processingPromises);
+    allResults.push(...results);
 
     console.log(`🏁 Smart Quoting processing completed: ${allResults.length} total results`);
     return allResults;

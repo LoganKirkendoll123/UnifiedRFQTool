@@ -13,6 +13,10 @@ export interface ProcessingStatus {
   currentStep: number;
   totalSteps: number;
   currentItem?: string;
+  currentBatch?: {
+    current: number;
+    total: number;
+  };
   error?: string;
 }
 

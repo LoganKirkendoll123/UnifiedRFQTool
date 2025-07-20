@@ -8,6 +8,10 @@ interface ProcessingStatusProps {
   errors: number;
   isProcessing: boolean;
   currentCarrier?: string;
+  currentBatch?: {
+    current: number;
+    total: number;
+  };
   carrierProgress?: {
     current: number;
     total: number;
@@ -21,10 +25,12 @@ export const ProcessingStatus: React.FC<ProcessingStatusProps> = ({
   errors,
   isProcessing,
   currentCarrier,
+  currentBatch,
   carrierProgress
 }) => {
   const progress = total > 0 ? (completed / total) * 100 : 0;
   const carrierProgressPercent = carrierProgress ? (carrierProgress.current / carrierProgress.total) * 100 : 0;
+  const batchProgressPercent = currentBatch ? (currentBatch.current / currentBatch.total) * 100 : 0;
 
   return (
     <div className="bg-white rounded-lg shadow-md p-6">
@@ -56,6 +62,30 @@ export const ProcessingStatus: React.FC<ProcessingStatusProps> = ({
           </div>
         </div>
 
+        {/* Batch Progress (if processing with rate limiting) */}
+        {isProcessing && currentBatch && (
+          <div className="bg-purple-50 border border-purple-200 rounded-lg p-4">
+            <div className="flex items-center space-x-2 mb-2">
+              <Package className="h-4 w-4 text-purple-600" />
+              <span className="text-sm font-medium text-purple-900">
+                Processing Batch {currentBatch.current} of {currentBatch.total}
+              </span>
+            </div>
+            <div className="flex justify-between text-xs text-purple-700 mb-1">
+              <span>Batch Progress</span>
+              <span>{currentBatch.current} of {currentBatch.total} batches</span>
+            </div>
+            <div className="w-full bg-purple-200 rounded-full h-2">
+              <div
+                className="bg-purple-600 h-2 rounded-full transition-all duration-300 ease-out"
+                style={{ width: `${batchProgressPercent}%` }}
+              />
+            </div>
+            <div className="text-xs text-purple-600 mt-1">
+              Rate limiting: 50 RFQs per batch, max 500/minute
+            </div>
+          </div>
+        )}
         {/* Current Carrier Progress (if processing) */}
         {isProcessing && currentCarrier && carrierProgress && (
           <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
@@ -105,20 +135,21 @@ export const ProcessingStatus: React.FC<ProcessingStatusProps> = ({
           </div>
         </div>
 
-        {/* Processing Benefits */}
-        {isProcessing && (
+        {/* Rate Limiting Benefits */}
+        {isProcessing && currentBatch && (
           <div className="bg-green-50 border border-green-200 rounded-lg p-4">
             <div className="flex items-center space-x-2 mb-2">
               <TrendingUp className="h-4 w-4 text-green-600" />
               <span className="text-sm font-medium text-green-900">
-                Individual Carrier Processing Benefits
+                Smart Rate Limiting Benefits
               </span>
             </div>
             <div className="text-xs text-green-700 space-y-1">
-              <div>• Faster response times per carrier (25s timeout vs 55s)</div>
-              <div>• Better error isolation - one failed carrier doesn't affect others</div>
-              <div>• Real-time progress tracking for each carrier</div>
-              <div>• Improved reliability and success rates</div>
+              <div>• Respects API rate limits (500/min) with burst handling (50 per batch)</div>
+              <div>• Maximizes throughput while preventing rate limit errors</div>
+              <div>• Automatic timing adjustments based on API response patterns</div>
+              <div>• Parallel processing within rate limit constraints</div>
+              <div>• Improved reliability and consistent API performance</div>
             </div>
           </div>
         )}

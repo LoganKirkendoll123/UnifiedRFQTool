@@ -145,23 +145,92 @@ export class RFQProcessor {
     console.log(`🧠 Starting Smart Quoting RFQ processing: ${rfqs.length} RFQs`);
 
     const allResults: SmartQuotingResult[] = [];
+    const requestTimestamps: number[] = []; // Track request times for rate limiting
+    const RATE_LIMIT_PER_MINUTE = 500;
+    const BURST_LIMIT = 50;
+    const MINUTE_IN_MS = 60 * 1000;
 
-    // Process all RFQs asynchronously for better performance
-    console.log(`🚀 Processing ${rfqs.length} RFQs in parallel for maximum speed`);
+    // Process RFQs in batches of 50 to respect rate limits
+    const batchSize = BURST_LIMIT;
+    const totalBatches = Math.ceil(rfqs.length / batchSize);
     
-    const processingPromises = rfqs.map(async (rfq, index) => {
-      // Update progress for this specific RFQ
-      if (options.onProgress) {
-        const classification = this.classifyShipment(rfq);
-        options.onProgress(index + 1, rfqs.length, `RFQ ${index + 1}: ${classification.quoting.toUpperCase()}`);
+    console.log(`🚀 Processing ${rfqs.length} RFQs in ${totalBatches} batches of ${batchSize} (rate limit: ${RATE_LIMIT_PER_MINUTE}/min)`);
+    
+    for (let batchIndex = 0; batchIndex < totalBatches; batchIndex++) {
+      const batchStart = batchIndex * batchSize;
+      const batchEnd = Math.min(batchStart + batchSize, rfqs.length);
+      const batchRFQs = rfqs.slice(batchStart, batchEnd);
+      
+      console.log(`📦 Processing batch ${batchIndex + 1}/${totalBatches}: RFQs ${batchStart + 1}-${batchEnd}`);
+      
+      // Check rate limit before starting batch
+      const now = Date.now();
+      const oneMinuteAgo = now - MINUTE_IN_MS;
+      
+      // Remove timestamps older than 1 minute
+      while (requestTimestamps.length > 0 && requestTimestamps[0] < oneMinuteAgo) {
+        requestTimestamps.shift();
       }
       
-      return await this.processSingleRFQ(rfq, options, index);
-    });
-    
-    // Wait for all RFQs to complete
-    const results = await Promise.all(processingPromises);
-    allResults.push(...results);
+      // Check if we need to wait to respect the 500/minute limit
+      if (requestTimestamps.length + batchRFQs.length > RATE_LIMIT_PER_MINUTE) {
+        const oldestRelevantRequest = requestTimestamps[0];
+        const waitTime = Math.max(0, MINUTE_IN_MS - (now - oldestRelevantRequest));
+        
+        if (waitTime > 0) {
+          console.log(`⏰ Rate limit approaching. Waiting ${Math.ceil(waitTime / 1000)}s before next batch...`);
+          
+          if (options.onProgress) {
+            options.onProgress(
+              batchStart, 
+              rfqs.length, 
+              `Waiting ${Math.ceil(waitTime / 1000)}s for rate limit (batch ${batchIndex + 1}/${totalBatches})`
+            );
+          }
+          
+          await new Promise(resolve => setTimeout(resolve, waitTime));
+        }
+      }
+      
+      // Record timestamps for this batch
+      const batchStartTime = Date.now();
+      for (let i = 0; i < batchRFQs.length; i++) {
+        requestTimestamps.push(batchStartTime);
+      }
+      
+      // Process batch in parallel
+      const batchPromises = batchRFQs.map(async (rfq, localIndex) => {
+        const globalIndex = batchStart + localIndex;
+        
+        // Update progress for this specific RFQ
+        if (options.onProgress) {
+          const classification = this.classifyShipment(rfq);
+          options.onProgress(
+            globalIndex + 1, 
+            rfqs.length, 
+            `Batch ${batchIndex + 1}/${totalBatches}: RFQ ${globalIndex + 1} (${classification.quoting.toUpperCase()})`
+          );
+        }
+        
+        return await this.processSingleRFQ(rfq, options, globalIndex);
+      });
+      
+      // Wait for batch to complete
+      const batchResults = await Promise.all(batchPromises);
+      allResults.push(...batchResults);
+      
+      const batchDuration = Date.now() - batchStartTime;
+      console.log(`✅ Batch ${batchIndex + 1}/${totalBatches} completed in ${batchDuration}ms`);
+      
+      // Update progress after batch completion
+      if (options.onProgress) {
+        options.onProgress(
+          batchEnd, 
+          rfqs.length, 
+          `Completed batch ${batchIndex + 1}/${totalBatches}`
+        );
+      }
+    }
 
     console.log(`🏁 Smart Quoting processing completed: ${allResults.length} total results`);
     return allResults;

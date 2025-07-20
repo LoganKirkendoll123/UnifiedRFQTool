@@ -354,7 +354,7 @@ export class Project44APIClient {
     }
 
     // Fallback to SCAC or account code
-    return scac || accountInfo.code || 'Unknown Carrier';
+    carrierGroups.sort((a: CarrierGroup, b: CarrierGroup) => a.groupName.localeCompare(b.groupName));
   }
 
   private getImprovedCarrierName(originalName: string, scac?: string): string {

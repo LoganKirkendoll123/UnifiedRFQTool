@@ -74,7 +74,7 @@ export class RFQProcessor {
     };
 
     try {
-      let quotes: any[] = [];
+      let quotes: Quote[] = [];
 
       if (classification.quoting === 'freshx' && this.freshxClient) {
         console.log(`🌡️ Getting FreshX quotes for RFQ ${rowIndex + 1}`);
@@ -271,7 +271,7 @@ export class RFQProcessor {
       };
 
       try {
-        let quotes: any[] = [];
+        let quotes: Quote[] = [];
 
         if (classification.quoting === 'freshx' && this.freshxClient) {
           quotes = await this.freshxClient.getQuotes(rfq);

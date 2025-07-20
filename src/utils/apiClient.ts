@@ -817,25 +817,6 @@ export class Project44APIClient {
     
     // Map common carrier codes to proper names
     const codeToName: { [key: string]: string } = {
-      'FXFE': 'FedEx Freight',
-      'ODFL': 'Old Dominion Freight Line',
-      'SAIA': 'Saia LTL Freight',
-      'RLCA': 'R+L Carriers',
-      'ABFS': 'ABF Freight',
-      'CTII': 'Central Transport',
-      'DHRN': 'Dayton Freight Lines',
-      'EXLA': 'Estes Express Lines',
-      'FWDA': 'Forward Air',
-      'LAKL': 'Lakeville Motor Express',
-      'NEMF': 'New England Motor Freight',
-      'PITT': 'Pitt Ohio',
-      'SEFL': 'Southeastern Freight Lines',
-      'UPGF': 'UPS Freight',
-      'WARD': 'Ward Transport',
-      'YELL': 'YRC Freight',
-      'UPSN': 'UPS Freight',
-      'CNWY': 'Conway Freight',
-      'RDWY': 'Roadway Express',
       'YRCW': 'YRC Worldwide'
     };
 

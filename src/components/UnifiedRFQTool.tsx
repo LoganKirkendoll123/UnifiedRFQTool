@@ -328,10 +328,8 @@ export const UnifiedRFQTool: React.FC<UnifiedRFQToolProps> = ({
   };
   
   const validateManualForm = (): string[] => {
-    return rfqProcessor.validateRFQ({
-      ...manualFormData,
-      accessorial: []
-    });
+    const rfqData = convertManualFormToRFQ();
+    return rfqProcessor.validateRFQ(rfqData);
   };
   
   const handleHistoricalShipmentSelect = (id: number, selected: boolean) => {

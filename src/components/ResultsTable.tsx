@@ -3,7 +3,7 @@ import { ProcessingResult } from '../types';
 import { ChevronDown, ChevronUp, Download, Truck, MapPin, Package, Thermometer, Award, Shield, Clock, XCircle, Grid, List, Target, TrendingUp, TrendingDown } from 'lucide-react';
 import { QuotePricingCard } from './QuotePricingCard';
 import { RFQCard } from './RFQCard';
-import { formatCurrency } from '../utils/pricingCalculator';
+import { formatCurrency, formatItemizedCharges } from '../utils/pricingCalculator';
 
 interface ResultsTableProps {
   results: ProcessingResult[];

@@ -346,3 +346,30 @@ export const formatChargeDescription = (charge: RateCharge): string => {
   
   return codeDescriptions[charge.code] || charge.code || 'Additional Charge';
 };
+
+export const formatItemizedCharges = (quote: QuoteWithPricing): string => {
+  if (!quote.chargeBreakdown) {
+    return `Total/${formatCurrency(quote.carrierTotalRate || 0)}`;
+  }
+  
+  const allCharges: RateCharge[] = [
+    ...quote.chargeBreakdown.baseCharges,
+    ...quote.chargeBreakdown.fuelCharges,
+    ...quote.chargeBreakdown.accessorialCharges,
+    ...quote.chargeBreakdown.discountCharges,
+    ...quote.chargeBreakdown.premiumCharges,
+    ...quote.chargeBreakdown.otherCharges
+  ];
+  
+  if (allCharges.length === 0) {
+    return `Total/${formatCurrency(quote.carrierTotalRate || 0)}`;
+  }
+  
+  return allCharges
+    .map(charge => {
+      const name = formatChargeDescription(charge);
+      const value = formatCurrency(charge.amount);
+      return `${name}/${value}`;
+    })
+    .join(';');
+};

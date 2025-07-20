@@ -1,5 +1,5 @@
 import React from 'react';
-import { CheckCircle, XCircle, Clock, Loader2, Truck, TrendingUp } from 'lucide-react';
+import { CheckCircle, XCircle, Clock, Loader2, Truck, TrendingUp, Package } from 'lucide-react';
 
 interface ProcessingStatusProps {
   total: number;

@@ -6,7 +6,6 @@ import {
   Project44RateQuoteRequest,
   Project44RateQuoteResponse,
   CapacityProvider,
-  CapacityProviderIdentifier,
   LineItem,
   AccessorialService,
   TimeWindow,
@@ -14,7 +13,6 @@ import {
   CapacityProviderAccountInfosCollection,
   CapacityProviderAccountInfos,
   CapacityProviderAccountGroupInfo,
-  RateCharge,
   Contact,
   HazmatDetail
 } from '../types';

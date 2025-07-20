@@ -300,11 +300,11 @@ export class RFQProcessor {
         }
         
         if (quotes.length > 0) {
-          const quotesWithPricing = (await Promise.all(
+          const quotesWithPricing = await Promise.all(
             quotes.map(quote => 
               calculatePricingWithCustomerMargins(quote, options.pricingSettings, options.selectedCustomer)
             )
-          )) as any[];
+          );
           
           result.quotes = quotesWithPricing;
           result.status = 'success';

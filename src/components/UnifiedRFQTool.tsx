@@ -120,6 +120,9 @@ export const UnifiedRFQTool: React.FC<UnifiedRFQToolProps> = ({
   const [selectedPastRFQBatch, setSelectedPastRFQBatch] = useState<string>('');
   const [pastRFQData, setPastRFQData] = useState<RFQRow[]>([]);
   
+  // State for specific customers mode
+  const [specificCustomers, setSpecificCustomers] = useState<string[]>([]);
+  
   // Filters
   const [customerFilter, setCustomerFilter] = useState('');
   const [dateRangeFilter, setDateRangeFilter] = useState({ start: '', end: '' });
@@ -153,7 +156,42 @@ export const UnifiedRFQTool: React.FC<UnifiedRFQToolProps> = ({
   // Single carrier selection (for single carrier mode)
   const [selectedSingleCarrier, setSelectedSingleCarrier] = useState<string>('');
 
+  // Helper function to calculate batch summary
+  const calculateBatchSummary = (results: any[]) => {
+    const total_quotes_received = results.reduce((sum, result) => sum + result.quotes.length, 0);
+    const successfulResults = results.filter(r => r.status === 'success' && r.quotes.length > 0);
+    
+    let best_total_price = 0;
+    let total_profit = 0;
+    
+    if (successfulResults.length > 0) {
+      const allQuotes = successfulResults.flatMap(r => r.quotes);
+      if (allQuotes.length > 0) {
+        const quotesWithPricing = allQuotes.filter(q => q.customerPrice !== undefined);
+        if (quotesWithPricing.length > 0) {
+          best_total_price = Math.min(...quotesWithPricing.map(q => q.customerPrice));
+          total_profit = quotesWithPricing.reduce((sum, q) => sum + q.profit, 0);
+        }
+      }
+    }
+    
+    return {
+      total_quotes_received,
+      best_total_price,
+      total_profit
+    };
+  };
 
+  // Helper function to save RFQ batch
+  const saveRFQBatch = async (batch: any) => {
+    const { error } = await supabase
+      .from('rfq_batches')
+      .insert([batch]);
+    
+    if (error) {
+      throw error;
+    }
+  };
   
   
   // Load historical data
@@ -481,7 +519,7 @@ export const UnifiedRFQTool: React.FC<UnifiedRFQToolProps> = ({
     setSaveSuccess(false);
 
     try {
-      const batchName = `${activeMode.charAt(0).toUpperCase() + activeMode.slice(1)} RFQ Batch - ${new Date().toLocaleDateString()}`;
+      const batchName = `${inputSource.charAt(0).toUpperCase() + inputSource.slice(1)} RFQ Batch - ${new Date().toLocaleDateString()}`;
       const summary = calculateBatchSummary(rfqProcessor.results);
       
       const batch = {

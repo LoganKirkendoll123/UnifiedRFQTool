@@ -12,9 +12,7 @@ import {
   Address,
   CapacityProviderAccountInfosCollection,
   CapacityProviderAccountInfos,
-  CapacityProviderAccountGroupInfo,
-  Contact,
-  HazmatDetail
+  CapacityProviderAccountGroupInfo
 } from '../types';
 
 // Carrier group interface for organizing carriers

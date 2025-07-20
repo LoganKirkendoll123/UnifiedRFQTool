@@ -381,7 +381,7 @@ export class RFQProcessor {
     const result = newResults[resultIndex];
     
     if (result && result.quotes) {
-      const updatedQuotes = result.quotes.map(quote => {
+      const updatedQuotes = result.quotes.map((quote: QuoteWithPricing) => {
         if (quote.quoteId === quoteId) {
           return calculatePricingWithCustomerMargins(quote, options.pricingSettings, options.selectedCustomer, newPrice);
         }

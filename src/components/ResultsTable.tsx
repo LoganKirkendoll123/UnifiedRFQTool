@@ -458,6 +458,15 @@ export const ResultsTable: React.FC<ResultsTableProps> = ({
                           <span className="text-gray-400">No quotes</span>
                         )}
                       </td>
+                      <td className="px-6 py-4 text-sm text-gray-900">
+                        {bestQuote ? (
+                          <div className="max-w-xs truncate" title={formatItemizedCharges(bestQuote)}>
+                            {formatItemizedCharges(bestQuote)}
+                          </div>
+                        ) : (
+                          <span className="text-gray-400">—</span>
+                        )}
+                      </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                         {isMultiMode && multiModeResult.competitiveAnalysis ? (
                           <div className="space-y-1">
@@ -499,7 +508,7 @@ export const ResultsTable: React.FC<ResultsTableProps> = ({
                     
                     {expandedRows.has(group.shipmentIndex * 100 + resultIndex) && result.quotes.length > 0 && (
                       <tr>
-                        <td colSpan={isMultiMode ? 8 : 7} className="px-6 py-4 bg-gray-50">
+                        <td colSpan={isMultiMode ? 9 : 8} className="px-6 py-4 bg-gray-50">
                           <div className="space-y-4">
                             {hasCustomerPrice(result.quotes[0]) ? (
                               result.quotes.map((quote) => (
@@ -569,7 +578,7 @@ export const ResultsTable: React.FC<ResultsTableProps> = ({
                     
                     {result.error && (
                       <tr>
-                        <td colSpan={isMultiMode ? 8 : 7} className="px-6 py-2 bg-red-50">
+                        <td colSpan={isMultiMode ? 9 : 8} className="px-6 py-2 bg-red-50">
                           <div className="text-sm text-red-700 flex items-center space-x-2">
                             <XCircle className="h-4 w-4" />
                             <span>{result.error}</span>

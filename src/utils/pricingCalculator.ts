@@ -285,7 +285,7 @@ export const calculatePricingWithCustomerMargins = async (
           appliedMarginPercentage: finalCustomerPrice > 0 ? (profit / finalCustomerPrice) * 100 : 0
         };
         
-        console.log(`💰 Applied customer margin: ${customerMargin}% (final: ${result.appliedMarginPercentage.toFixed(1)}%) for ${selectedCustomer} + ${carrierName}`);
+        console.log(`💰 Applied customer margin: ${customerMargin}% (final: ${(result.appliedMarginPercentage || 0).toFixed(1)}%) for ${selectedCustomer} + ${carrierName}`);
       } else {
         console.log(`📋 Using fallback margin: ${settings.fallbackMarkupPercentage || 23}% for ${selectedCustomer} + ${carrierName}`);
       }

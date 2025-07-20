@@ -586,7 +586,7 @@ export interface CapacityProviderAccountInfosCollection {
 }
 
 export interface CapacityProviderAccountGroup {
-  accounts: { code: string }[];
+  accounts?: { code: string }[];
   code?: string;
 }
 

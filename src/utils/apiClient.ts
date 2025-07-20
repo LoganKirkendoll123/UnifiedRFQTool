@@ -7,6 +7,7 @@ import {
   Project44RateQuoteResponse,
   CapacityProvider,
   LineItem,
+  HazmatDetail,
   AccessorialService,
   TimeWindow,
   Address,
@@ -221,7 +222,7 @@ export class Project44APIClient {
       }
 
       // Sort groups alphabetically
-      carrierGroups.sort((a, b) => a.groupName.localeCompare(b.groupName));
+      carrierGroups.sort((a: CarrierGroup, b: CarrierGroup) => a.groupName.localeCompare(b.groupName));
 
       const totalCarriers = carrierGroups.reduce((sum, group) => sum + group.carriers.length, 0);
       console.log(`✅ Loaded ${carrierGroups.length} carrier groups with ${totalCarriers} total carriers for ${modeDescription}`);
@@ -689,7 +690,8 @@ export class Project44APIClient {
       weightUnit: rfq.weightUnit || 'LB',
       // For entire group, just specify the group code without accounts array
       capacityProviderAccountGroup: {
-        code: accountGroupCode
+        code: accountGroupCode,
+        accounts: []
       }
     };
 

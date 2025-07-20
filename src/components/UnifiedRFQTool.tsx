@@ -121,7 +121,7 @@ export const UnifiedRFQTool: React.FC<UnifiedRFQToolProps> = ({
   const [pastRFQData, setPastRFQData] = useState<RFQRow[]>([]);
   
   // State for specific customers mode
-  const [specificCustomers, setSpecificCustomers] = useState<string[]>([]);
+  const [specificCustomers] = useState<string[]>([]);
   
   // Filters
   const [customerFilter, setCustomerFilter] = useState('');
